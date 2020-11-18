@@ -1,0 +1,103 @@
+---
+title: "Final Project Abstract"
+author: "Matthew Baker, Erinda Budo, Don Padmaperuma, Subhalaxmi Rout"
+output:
+  html_document:
+    df_print: paged
+    toc: no
+  bookdown::pdf_document2:
+    latex_engine: xelatex
+    toc: no
+  pdf_document:
+    toc: no
+geometry: margin=1.5cm
+pagestyle: empty
+papersize: a2
+fontsize: 12pt
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+### Abstarct 
+
+HR Analytics finds out the people-related trends in the data and helps the HR Department take the appropriate steps to keep the organization running smoothly and profitably. Attrition is a corporate setup is one of the complex challenges that the people managers and the HRs personnel have to deal with it.
+
+In this research assignment, we investigated data on employee attrition of a company. This is a fictional data set created by IBM data scientists. 
+
+We have collected this dataset from Kaggle, using the below link:
+https://www.kaggle.com/pavansubhasht/ibm-hr-analytics-attrition-dataset
+
+#### Problem Statement
+
+The first question comes into our mind, what is attrition?
+
+Attrition is a process in which the workforce dwindles at a company, following a period in which a number of people retire or resign, and are not replaced.
+
+Second question, what are the reason for attrition?
+
+This can happen for many reasons:
+
+* Employees looking for better opportunities
+* A negative working environment
+* Bad management
+* Excessive working hours
+
+We will do the analysis based on Gender, Education, Income, Working Environment, and lastly, build a predictive model to determine whether an employee is going to quit or not.
+
+#### Approaches follow
+
+The first part will consider the data provided and attempt to identify trends and patterns. The data is then split into training and testing sets and using machine learning techniques identify the individuals that are more likely to leave the organization.
+
+Response or Target feature is the Attrition which is going to be our feature of interest for the prediction - based on the independent features. 
+
+#### Dataset Overview
+
+The dataset consists of 1470 observations (rows), 35 features (variables). There is no missing data! this will make it easier to work with the dataset. We only have two datatypes in this dataset: factors and integers.
+
+Let's have an overview of the dataset. 
+
+```{r}
+hr_data <- 
+  read.csv("https://raw.githubusercontent.com/mharrisonbaker/DATA621_GroupWork2/main/Final%20Project/WA_Fn-UseC_-HR-Employee-Attrition.csv")
+dim(hr_data)
+```
+
+```{r}
+str(hr_data)
+```
+```{r}
+# missing values
+hr_data[!complete.cases(hr_data),]
+```
+```{r}
+colnames(hr_data)
+```
+
+```{r}
+summary(hr_data)
+```
+
+#### Attrition Distribution
+
+Below plot shows the distribution of attrition, the employee leave the company is 236 out of 1470. This is not a balanced dataset. 
+
+```{r}
+counts <- table(hr_data$Attrition)
+print(counts)
+counts_per <- round(counts / 1470 * 100,1)
+print(counts_per)
+bp <- barplot(counts_per, main="Attrition Distribution",
+   xlab="Attrition True or False",
+   ylab = "Count",
+   col="darkblue", legend = rownames(counts))
+   text(bp, 0, counts_per,cex=1,pos=3, col = 'white') 
+
+```
+
+
