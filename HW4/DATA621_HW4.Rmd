@@ -1,0 +1,259 @@
+---
+title: "Homework4"
+author: "Matthew Baker, Don Padmaperuma, Subhalaxmi Rout, Erinda Budo"
+date: "11/18/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview
+
+In this homework assignment, we will explore, analyze and model a data set containing approximately 8000
+records representing a customer at an auto insurance company. Each record has two response variables. The
+first response variable, TARGET_FLAG, is a 1 or a 0. A “1” means that the person was in a car crash. A zero
+means that the person was not in a car crash. The second response variable is TARGET_AMT. This value is zero
+if the person did not crash their car. But if they did crash their car, this number will be a value greater than zero.
+Below is a short description of the variables of interest in the data set: 
+
+*INDEX:	Identification Variable (do not use)
+*TARGET_FLAG:	Was Car in a crash? 1=YES 0=NO
+*TARGET_AMT:	If car was in a crash, what was the cost
+*AGE: Age of Driver	
+*BLUEBOOK:	Value of Vehicle
+*CAR_AGE:	Vehicle Age	
+*CAR_TYPE:	Type of Car	
+*CAR_USE:	Vehicle Use	
+*CLM_FREQ:	# Claims (Past 5 Years)	
+*EDUCATION: 	Max Education Level	
+*HOMEKIDS: 	# Children at Home	
+*HOME_VAL: 	Home Value	
+*INCOME: 	Income	
+*JOB: 	Job Category	
+*KIDSDRIV: 	# Driving Children	
+*MSTATUS: 	Marital Status	
+*MVR_PTS:	Motor Vehicle Record Points	
+*OLDCLAIM:	Total Claims (Past 5 Years)	
+*PARENT1:	Single Parent	
+*RED_CAR:	A Red Car	
+*REVOKED:	License Revoked (Past 7 Years)	
+*SEX:	Gender	
+*TIF:	Time in Force	
+*TRAVTIME:	Distance to Work
+*URBANICITY:	Home/Work Area
+*YOJ:	Years on Job	
+
+
+## Objective
+
+Our objective is to build multiple linear regression and binary logistic regression models on the training data
+to predict the probability that a person will crash their car and also the amount of money it will cost if the person
+does crash their car.
+
+
+
+```{r}
+library(e1071)
+library(dplyr)
+library(purrr)
+library(tidyr)
+library(ggplot2)
+library(corrplot)
+library(FactoMineR)
+library(VIF)
+library(knitr)
+library(kableExtra)
+library(Hmisc)
+library(pROC)
+library(binr)
+```
+
+
+## Data Exploration
+
+```{r}
+train = read.csv("https://raw.githubusercontent.com/mharrisonbaker/DATA621_GroupWork2/main/HW4/insurance_training_data.csv", header = TRUE) %>%
+  dplyr::select(-INDEX)
+dim(train)
+```
+
+```{r}
+names(train)
+```
+
+```{r}
+kable(train[1:15,]) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),latex_options="scale_down")
+```
+
+```{r}
+#summarize training data
+kable(psych::describe(train), digits = 3) %>% kable_styling(bootstrap_options = c("striped", "hover", "responsive"),latex_options="scale_down")
+```
+
+There are 8161 records and 26 variables in this data set with some missing values in few selected variables such as AGE, YOJ and CAR_AGE. These variables may require imputation using median values or other methods. 
+The data consists of two response variables: TARGET_FLAG and TARGET_AMT. TARGET_FLAG is a binary variable with Yes/No indicating if the car was involved in a crash. TARGET_AMT is the cost of the crash.
+
+## Visual Exploration
+
+### Boxplots
+
+The below boxplots will show all of the variables listed in the dataset and how the data is spread for each variable. 
+
+```{r}
+library(reshape)
+ggplot(melt(train), aes(x=factor(variable), y=value)) + 
+  facet_wrap(~variable, scale="free") + 
+  geom_boxplot()
+```
+
+### Histograms
+
+```{r}
+ggplot(melt(train), aes(x=value)) + 
+  facet_wrap(~variable, scale="free") + 
+  geom_histogram(bins=50)
+```
+
+## Data Preparation
+
+Data seems to somewhat unstructured upon loading to R. As an example, income need to converted to a numeric value. Some of the data has extra character "z_" before variables. These need to be removed from data. 
+
+### Transform data
+
+This step is required to clean the data in order to analyze it. 
+> Remove *$* sign from the INCOME, HOME_VAL, BLUEBOOK and OLDCLAIM.
+> replace " " with underscore “_" of variables: EDUCATION, JOB, CAR_TYPE, URBANICITY.
+> Change it as factors for above variables plus TARGET_FRAG
+
+```{r}
+currencyconv = function(input) {
+  out = sub("\\$", "", input)
+  out = as.numeric(sub(",", "", out))
+  return(out)
+}
+
+# Replace spaces with underscores
+underscore = function(input) {
+  out = sub(" ", "_", input)
+  return(out)
+}
+train = as.tbl(train) %>% 
+  mutate_at(c("INCOME","HOME_VAL","BLUEBOOK","OLDCLAIM"),
+            currencyconv) %>% 
+  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
+            underscore) %>% 
+  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
+            as.factor) %>% 
+  mutate(TARGET_FLAG = as.factor(TARGET_FLAG))
+
+#check data
+summary(train) %>% kable() %>% kable_styling()
+```
+
+NA count for each column:
+
+```{r}
+na_count <- sapply(train, function(x) sum(is.na(x))) %>% kable() %>% kable_styling()
+na_count 
+```
+
+```{r}
+ntrain<-select_if(train, is.numeric)
+ntrain %>%
+  keep(is.numeric) %>%                     # Keep only numeric columns
+  gather() %>%                             # Convert to key-value pairs
+  ggplot(aes(value)) +                     # Plot the values
+    facet_wrap(~ key, scales = "free") +   # In separate panels
+    geom_density() 
+```
+
+### Imputation of missing (NA) values
+
+Our data exploration revealed that there are multiple variables with missing values. There are several ways to treat this situation: deleting the observations with NA values, deleting the variables that has NA values, imputation with the mean/median/mode or imputation with a prediction. 
+For this scenario we will imputing the missing data with mean. 
+
+```{r}
+train$AGE[is.na(train$AGE)] <- mean(train$AGE, na.rm=TRUE)
+train$YOJ[is.na(train$YOJ)] <- mean(train$YOJ, na.rm=TRUE)
+train$HOME_VAL[is.na(train$HOME_VAL)] <- mean(train$HOME_VAL, na.rm=TRUE)
+train$CAR_AGE[is.na(train$CAR_AGE)] <- mean(train$CAR_AGE, na.rm=TRUE)
+train$INCOME[is.na(train$INCOME)] <- mean(train$INCOME, na.rm=TRUE)
+train <- train[complete.cases(train),]
+
+visdat::vis_miss(train)
+```
+
+Missing data have been fixed.
+
+More data preparation...
+
+```{r}
+# get complete cases
+
+train <- train[complete.cases(train),]
+
+# save the completed clean data into a new dataframe
+
+train_clean <- train
+
+# transform data using log for skewed HOMEKIDS, MVR_PTS, OLDCLAIM, TIF, KIDSDRIVE and CLM_FREQ 
+
+#Convert indicator variables to 0s and 1s; 1 = Yes, Male for Sex, Commercial for Car Use, Red for RED_CAR, and Highly Urban for URBANICITY
+train_clean$PARENT1 <- ifelse(train_clean$PARENT1=="Yes", 1, 0)
+train_clean$MSTATUS <- ifelse(train_clean$MSTATUS=="Yes", 1, 0)
+train_clean$SEX <- ifelse(train_clean$SEX=="M", 1, 0)
+train_clean$CAR_USE <- ifelse(train_clean$CAR_USE=="Commercial", 1, 0)
+train_clean$RED_CAR <- ifelse(train_clean$RED_CAR=="Yes", 1, 0)
+train_clean$REVOKED <- ifelse(train_clean$REVOKED=="Yes", 1, 0)
+train_clean$URBANICITY <- ifelse(train_clean$URBANICITY == "Highly Urban/ Urban", 1, 0)
+
+#Convert categorical predictor values to indicator variables - EDUCATION, CAR_TYPE, JOB
+
+#EDUCATION, High school graduate is base case
+train_clean$HSDropout <- ifelse(train_clean$EDUCATION=="<High School", 1, 0)
+train_clean$Bachelors <- ifelse(train_clean$EDUCATION=="Bachelors", 1, 0)
+train_clean$Masters <- ifelse(train_clean$EDUCATION=="Masters", 1, 0)
+train_clean$PhD <- ifelse(train_clean$EDUCATION=="PhD", 1, 0)
+
+#CAR_TYPE, base case is minivan
+train_clean$Panel_Truck <- ifelse(train_clean$CAR_TYPE=="Panel Truck", 1, 0)
+train_clean$Pickup <- ifelse(train_clean$CAR_TYPE=="Pickup", 1, 0)
+train_clean$Sports_Car <- ifelse(train_clean$CAR_TYPE=="Sports Car", 1, 0)
+train_clean$Van <- ifelse(train_clean$CAR_TYPE=="Van", 1, 0)
+train_clean$SUV <- ifelse(train_clean$CAR_TYPE=="z_SUV", 1, 0)
+
+#JOB, base case is ""
+train_clean$Professional <- ifelse(train_clean$JOB == "Professional", 1, 0)
+train_clean$Blue_Collar <- ifelse(train_clean$JOB == "Professional", 1, 0)
+train_clean$Clerical <- ifelse(train_clean$JOB == "Clerical", 1, 0)
+train_clean$Doctor <- ifelse(train_clean$JOB == "Doctor", 1, 0)
+train_clean$Lawyer <- ifelse(train_clean$JOB == "Lawyer", 1, 0)
+train_clean$Manager <- ifelse(train_clean$JOB == "Manager", 1, 0)
+train_clean$Home_Maker <- ifelse(train_clean$JOB == "Home Maker", 1, 0)
+train_clean$Student <- ifelse(train_clean$JOB == "Student", 1, 0)
+
+# INCOME, HOME_VAL, BLUEBOOK, and OLDCLAIM are represented as strings. So we will be extracting the numeric values for these.
+train_clean$INCOME <- as.numeric(train_clean$INCOME)
+train_clean$HOME_VAL <- as.numeric(train_clean$HOME_VAL)
+train_clean$BLUEBOOK <- as.numeric(train_clean$BLUEBOOK)
+train_clean$OLDCLAIM <- as.numeric(train_clean$OLDCLAIM)
+```
+
+```{r}
+str(train_clean)
+```
+```{r}
+write.csv(train_clean, file = "train_clean.csv")
+getwd()
+```
+```{r}
+trainnum <- dplyr::select_if(train, is.numeric)
+
+rcorr(as.matrix(trainnum))
+```
+```{r}
+corrplot(cor(trainnum), method="square")
+```
+
