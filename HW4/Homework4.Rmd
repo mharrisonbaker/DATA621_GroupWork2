@@ -1,0 +1,665 @@
+---
+title: "Homework4"
+author: "Matthew Baker, Don Padmaperuma, Subhalaxmi Rout, Erinda Budo"
+date: "11/22/2020"
+output:
+  prettydoc::html_pretty: null
+  html_document:
+    df_print: paged
+  pdf_document:
+    df_print: kable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+## Overview
+
+In this homework assignment, we will explore, analyze and model a data set containing approximately 8000
+records representing a customer at an auto insurance company. Each record has two response variables. The
+first response variable, TARGET_FLAG, is a 1 or a 0. A “1” means that the person was in a car crash. A zero
+means that the person was not in a car crash. The second response variable is TARGET_AMT. This value is zero
+if the person did not crash their car. But if they did crash their car, this number will be a value greater than zero.
+Below is a short description of the variables of interest in the data set: 
+
+* INDEX:	Identification Variable (do not use)
+* TARGET_FLAG:	Was Car in a crash? 1=YES 0=NO
+* TARGET_AMT:	If car was in a crash, what was the cost
+* AGE: Age of Driver	
+* BLUEBOOK:	Value of Vehicle
+* CAR_AGE:	Vehicle Age	
+* CAR_TYPE:	Type of Car	
+* CAR_USE:	Vehicle Use	
+* CLM_FREQ:	# Claims (Past 5 Years)	
+* EDUCATION: 	Max Education Level	
+* HOMEKIDS: 	# Children at Home	
+* HOME_VAL: 	Home Value	
+* INCOME: 	Income	
+* JOB: 	Job Category	
+* KIDSDRIV: 	# Driving Children	
+* MSTATUS: 	Marital Status	
+* MVR_PTS:	Motor Vehicle Record Points	
+* OLDCLAIM:	Total Claims (Past 5 Years)	
+* PARENT1:	Single Parent	
+* RED_CAR:	A Red Car	
+* REVOKED:	License Revoked (Past 7 Years)	
+* SEX: Gender	
+* TIF: Time in Force	
+* TRAVTIME:	Distance to Work
+* URBANICITY:	Home/Work Area
+* YOJ:	Years on Job	
+
+
+## Objective
+
+Our objective is to build multiple linear regression and binary logistic regression models on the training data
+to predict the probability that a person will crash their car and also the amount of money it will cost if the person
+does crash their car.
+
+
+
+```{r}
+library(e1071)
+library(dplyr)
+library(purrr)
+library(tidyr)
+library(ggplot2)
+library(corrplot)
+library(FactoMineR)
+library(VIF)
+library(knitr)
+library(kableExtra)
+library(Hmisc)
+library(pROC)
+library(binr)
+library(MASS)
+```
+
+
+## Data Exploration
+
+```{r}
+train = 
+  read.csv("https://raw.githubusercontent.com/mharrisonbaker/DATA621_GroupWork2/main/HW4/insurance_training_data.csv", 
+           header = TRUE) %>% dplyr::select(-INDEX)
+dim(train)
+```
+
+```{r}
+names(train)
+```
+
+```{r, fig.align='center'}
+kable(train[1:15,]) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),latex_options="scale_down")
+```
+
+```{r, fig.align='center'}
+#summarize training data
+kable(psych::describe(train), digits = 3) %>% kable_styling(bootstrap_options = c("striped", "hover", "responsive"),latex_options="scale_down")
+```
+
+There are 8161 records and 26 variables in this data set with some missing values in few selected variables such as AGE, YOJ and CAR_AGE. These variables may require imputation using median values or other methods. 
+The data consists of two response variables: TARGET_FLAG and TARGET_AMT. TARGET_FLAG is a binary variable with Yes/No indicating if the car was involved in a crash. TARGET_AMT is the cost of the crash.
+
+## Visual Exploration
+
+### Boxplots
+
+The below boxplots will show all of the variables listed in the dataset and how the data is spread for each variable. 
+
+```{r}
+library(reshape)
+ggplot(melt(train), aes(x=factor(variable), y=value)) + 
+  facet_wrap(~variable, scale="free") + 
+  geom_boxplot()
+```
+
+### Histograms
+
+```{r}
+ggplot(melt(train), aes(x=value)) + 
+  facet_wrap(~variable, scale="free") + 
+  geom_histogram(bins=50)
+```
+
+## Data Preparation
+
+Data seems to somewhat unstructured upon loading to R. As an example, income need to converted to a numeric value. Some of the data has extra character "z_" before variables. These need to be removed from data. 
+
+### Transform data
+
+This step is required to clean the data in order to analyze it. 
+
+> Remove *$* sign from the INCOME, HOME_VAL, BLUEBOOK and OLDCLAIM.
+> replace " " with underscore “_" of variables: EDUCATION, JOB, CAR_TYPE, URBANICITY.
+> Change it as factors for above variables plus TARGET_FRAG
+
+```{r}
+
+train$SEX <- stringr::str_remove(train$SEX, "^z_")
+train$MSTATUS <- stringr::str_remove(train$MSTATUS, "^z_")
+train$EDUCATION <- stringr::str_remove(train$EDUCATION, "^z_")
+train$CAR_TYPE <- stringr::str_remove(train$CAR_TYPE, "^z_")
+train$JOB <- stringr::str_remove(train$JOB, "^z_")
+train$URBANICITY <- stringr::str_remove(train$URBANICITY, "^z_")
+
+currencyconv = function(input) {
+  out = sub("\\$", "", input)
+  out = as.numeric(sub(",", "", out))
+  return(out)
+}
+# Replace spaces with underscores
+underscore = function(input) {
+  out = sub(" ", "_", input)
+  return(out)
+}
+train = as.tbl(train) %>% 
+  mutate_at(c("INCOME","HOME_VAL","BLUEBOOK","OLDCLAIM"),
+            currencyconv) %>% 
+  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
+            underscore) %>% 
+  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
+            as.factor) %>% 
+  mutate(TARGET_FLAG = as.factor(TARGET_FLAG))
+#check data
+summary(train) %>% kable() %>% kable_styling()
+```
+
+NA count for each column:
+
+```{r}
+na_count <- sapply(train, function(x) sum(is.na(x))) %>% kable() %>% kable_styling()
+# na_count 
+```
+
+```{r}
+ntrain<-select_if(train, is.numeric)
+ntrain %>%
+  keep(is.numeric) %>%                     # Keep only numeric columns
+  gather() %>%                             # Convert to key-value pairs
+  ggplot(aes(value)) +                     # Plot the values
+    facet_wrap(~ key, scales = "free") +   # In separate panels
+    geom_density() 
+```
+
+### Imputation of missing (NA) values
+
+Our data exploration revealed that there are multiple variables with missing values. There are several ways to treat this situation: deleting the observations with NA values, deleting the variables that has NA values, imputation with the mean/median/mode or imputation with a prediction. 
+For this scenario we will imputing the missing data with mean. 
+
+```{r}
+train$AGE[is.na(train$AGE)] <- mean(train$AGE, na.rm=TRUE)
+train$YOJ[is.na(train$YOJ)] <- mean(train$YOJ, na.rm=TRUE)
+train$HOME_VAL[is.na(train$HOME_VAL)] <- mean(train$HOME_VAL, na.rm=TRUE)
+train$CAR_AGE[is.na(train$CAR_AGE)] <- mean(train$CAR_AGE, na.rm=TRUE)
+train$INCOME[is.na(train$INCOME)] <- mean(train$INCOME, na.rm=TRUE)
+train <- train[complete.cases(train),]
+visdat::vis_miss(train)
+```
+
+Missing data have been fixed.
+
+More data preparation...
+
+```{r}
+# get complete cases
+train <- train[complete.cases(train),]
+
+# save the completed clean data into a new dataframe
+train_clean <- train
+
+
+
+# INCOME, HOME_VAL, BLUEBOOK, and OLDCLAIM are represented as strings. So we will be extracting the numeric values for these.
+
+train_clean = as.tbl(train_clean) %>% 
+  mutate_at(c("INCOME","HOME_VAL","BLUEBOOK","OLDCLAIM"),
+            currencyconv) %>% 
+  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
+            underscore) %>% 
+  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
+            as.factor) %>%
+  mutate(TARGET_FLAG = as.numeric(TARGET_FLAG))
+
+
+
+# transform data using log for skewed HOMEKIDS, MVR_PTS, OLDCLAIM, TIF, KIDSDRIVE and CLM_FREQ 
+#Convert indicator variables to 0s and 1s; 1 = Yes, Male for Sex, Commercial for Car Use, Red for RED_CAR, and Highly Urban for URBANICITY
+train_clean$PARENT1 <- ifelse(train_clean$PARENT1=="Yes", 1, 0)
+train_clean$MSTATUS <- ifelse(train_clean$MSTATUS=="Yes", 1, 0)
+train_clean$SEX <- ifelse(train_clean$SEX=="M", 1, 0)
+train_clean$CAR_USE <- ifelse(train_clean$CAR_USE=="Commercial", 1, 0)
+train_clean$RED_CAR <- ifelse(train_clean$RED_CAR=="Yes", 1, 0)
+train_clean$REVOKED <- ifelse(train_clean$REVOKED=="Yes", 1, 0)
+train_clean$URBANICITY <- ifelse(train_clean$URBANICITY == "Highly Urban/ Urban", 1, 0)
+train_clean$TARGET_FLAG <- ifelse(train_clean$TARGET_FLAG == 2, 0, 1)
+#Convert categorical predictor values to indicator variables - EDUCATION, CAR_TYPE, JOB
+#EDUCATION, High school graduate is base case
+train_clean$HSDropout <- ifelse(train_clean$EDUCATION=="<High School", 1, 0)
+train_clean$Bachelors <- ifelse(train_clean$EDUCATION=="Bachelors", 1, 0)
+train_clean$Masters <- ifelse(train_clean$EDUCATION=="Masters", 1, 0)
+train_clean$PhD <- ifelse(train_clean$EDUCATION=="PhD", 1, 0)
+#CAR_TYPE, base case is minivan
+train_clean$Panel_Truck <- ifelse(train_clean$CAR_TYPE=="Panel Truck", 1, 0)
+train_clean$Pickup <- ifelse(train_clean$CAR_TYPE=="Pickup", 1, 0)
+train_clean$Sports_Car <- ifelse(train_clean$CAR_TYPE=="Sports Car", 1, 0)
+train_clean$Van <- ifelse(train_clean$CAR_TYPE=="Van", 1, 0)
+train_clean$SUV <- ifelse(train_clean$CAR_TYPE=="z_SUV", 1, 0)
+#JOB, base case is ""
+train_clean$Professional <- ifelse(train_clean$JOB == "Professional", 1, 0)
+train_clean$Blue_Collar <- ifelse(train_clean$JOB == "Professional", 1, 0)
+train_clean$Clerical <- ifelse(train_clean$JOB == "Clerical", 1, 0)
+train_clean$Doctor <- ifelse(train_clean$JOB == "Doctor", 1, 0)
+train_clean$Lawyer <- ifelse(train_clean$JOB == "Lawyer", 1, 0)
+train_clean$Manager <- ifelse(train_clean$JOB == "Manager", 1, 0)
+train_clean$Home_Maker <- ifelse(train_clean$JOB == "Home Maker", 1, 0)
+train_clean$Student <- ifelse(train_clean$JOB == "Student", 1, 0)
+
+# check for missing data
+visdat::vis_miss(train_clean)
+```
+
+
+
+```{r}
+# datatype and variable name
+str(train_clean)
+```
+```{r}
+write.csv(train_clean, file = "train_clean.csv")
+getwd()
+```
+```{r}
+trainnum <- dplyr::select_if(train, is.numeric)
+rcorr(as.matrix(trainnum))
+```
+```{r}
+corrplot(cor(trainnum), method="square")
+```
+
+## Build Models
+
+### Model 1
+
+Out first model consists of all variables. 
+
+```{r}
+model1 <- lm(TARGET_FLAG ~ KIDSDRIV + AGE + HOMEKIDS + YOJ + INCOME + PARENT1 + HOME_VAL + MSTATUS + SEX + 
+               TRAVTIME + CAR_USE + BLUEBOOK + TIF + RED_CAR + OLDCLAIM + CLM_FREQ + REVOKED + MVR_PTS + CAR_AGE + URBANICITY +
+               HSDropout + Bachelors + Masters + PhD + Panel_Truck + Pickup + Sports_Car + Van + SUV + Professional + Blue_Collar +
+               Clerical + Doctor + Lawyer + Manager + Home_Maker + Student, data = train_clean)
+
+
+summary(model1)
+
+plot(resid(model1))
+hist(resid(model1))
+qqnorm(resid(model1))
+qqline(resid(model1))
+```
+
+### Model 2
+
+Remove those variable, having high p-values. 
+
+```{r}
+model2 <- lm(TARGET_FLAG ~  KIDSDRIV + PARENT1 + HOME_VAL + MSTATUS + SEX + TRAVTIME + 
+    CAR_USE + BLUEBOOK + TIF + OLDCLAIM + CLM_FREQ + REVOKED + MVR_PTS + Bachelors + 
+    Masters + PhD + Manager, data = train_clean)
+
+summary(model2)
+
+plot(resid(model2))
+hist(resid(model2))
+qqnorm(resid(model2))
+qqline(resid(model2))
+```
+
+### Model 3
+
+Select some variable which has more imact on car crash. They are INCOME (high income people more carefully drive), MSTATUS(married people drive more safely). We elemintaes thses variables and using those variable where the car crash probability high.
+
+```{r}
+model3 <- lm(TARGET_FLAG ~  KIDSDRIV + SEX + EDUCATION + TRAVTIME + TIF +CAR_TYPE + RED_CAR + OLDCLAIM +
+               CLM_FREQ + REVOKED + MVR_PTS, data = train_clean)
+
+summary(model3)
+```
+
+## Binary Logistic Regression
+
+### Model 4
+
+All of the variables will be tested to determine the base model they provided. This will allow us to see which variables are significant in our dataset, and allow us to make other models based on that.
+
+```{r}
+model4 <- glm(TARGET_FLAG ~ KIDSDRIV + AGE + HOMEKIDS + YOJ + INCOME + PARENT1 + HOME_VAL + MSTATUS + SEX + 
+               TRAVTIME + CAR_USE + BLUEBOOK + TIF + RED_CAR + OLDCLAIM + CLM_FREQ + REVOKED + MVR_PTS + CAR_AGE + URBANICITY +
+               HSDropout + Bachelors + Masters + PhD + Panel_Truck + Pickup + Sports_Car + Van + SUV + Professional + Blue_Collar +
+               Clerical + Doctor + Lawyer + Manager + Home_Maker + Student, data = train_clean, family = 'binomial')
+
+summary(model4)
+```
+
+```{r}
+par(mfrow = c(2,2))
+plot(model4)
+```
+
+### Model 5
+
+Variables will be removed one by one to determine best fit model. After each variable is removed, the model will be ‘ran’ again - until the most optimal output are produced.
+
+```{r}
+model5 <- glm(TARGET_FLAG ~ KIDSDRIV + INCOME + PARENT1 + HOME_VAL + MSTATUS + SEX + 
+               TRAVTIME + CAR_USE + BLUEBOOK + TIF + OLDCLAIM + CLM_FREQ + REVOKED + MVR_PTS +Bachelors + 
+                Masters + PhD + Van + SUV + Professional +Clerical + Doctor + Lawyer 
+              + Manager  + Student, data = train_clean, family = 'binomial')
+
+summary(model5)
+```
+
+```{r}
+par(mfrow = c(2,2))
+plot(model5)
+```
+
+
+### Model 6
+
+`dropterm` from `MASS` package automatically test all models that differ from the current model by the dropping of one single term. This is done respecting marginality, so it doesn't try models in which one main effect is dopped if the same predictor is also present in any interaction. 
+
+```{r}
+dropterm(model4, test = "F")
+```
+
+```{r}
+model6 <- glm(TARGET_FLAG ~ KIDSDRIV + INCOME + PARENT1 + HOME_VAL + MSTATUS + 
+               TRAVTIME + CAR_USE + BLUEBOOK + TIF + OLDCLAIM + CLM_FREQ + REVOKED + MVR_PTS + Bachelors + 
+                Van + SUV +  Manager, data = train_clean, family=binomial(link="logit"))
+
+summary(model6)
+```
+
+```{r}
+par(mfrow = c(2,2))
+plot(model6)
+```
+
+#### Display AIC and ROC of Binary Logistic Regression models
+
+```{r}
+AIC <- cbind(model4$aic, model5$aic, model6$aic)
+colnames(AIC) <- c("Model 4", "Model 5", "Model 6")
+print(AIC)
+```
+
+```{r}
+
+pred_4 <- predict(model4,train_clean)
+pred_5 <- predict(model5,train_clean)
+pred_6 <- predict(model6,train_clean)
+
+plot(roc(train_clean$TARGET_FLAG, pred_4, direction="<"),col="blue", lwd=3, main="ROC Curve")
+plot(roc(train_clean$TARGET_FLAG, pred_5, direction="<"),col="blue", lwd=3, main="ROC Curve")
+plot(roc(train_clean$TARGET_FLAG, pred_6, direction="<"),col="blue", lwd=3, main="ROC Curve")
+```
+
+## Model Selection
+
+To make prediction, we will compare various metrics for all three models. We calculate all three models’ accuracy, classification error rate, precision, sensitivity, specificity, F1 score, AUC, and confusion matrix. Even though all models yield similar metrics value, model 5 has the low AIC value. We will pick model 5 for our prediction.
+
+Model 4 matrices:
+
+```{r}
+predictedval <- predict(model4,train_clean)
+
+cm1 <- table(true = train_clean$TARGET_FLAG, pred = round(fitted(model4)))
+
+TN <- cm1[4]
+FN <- cm1[3]
+TP <- cm1[1]
+FP <- cm1[2]
+
+accuracy <- (TP + TN)/(TN + FN + TP + FP)
+
+precision <- TP/(TP + FP)
+
+sensitivity <- TP/(TP + FN)
+
+specificity <- TN/(TN + FP)
+  
+f1_score <- 2*TP/(2*TP + FP + FN)
+
+roc_obj <- roc(train_clean$TARGET_FLAG, predictedval)
+
+
+auc <- auc(roc_obj)
+
+df <- c(accuracy, precision, sensitivity, specificity, f1_score, auc)
+names(df) <- c("Accuracy", " precision", "F1-sensitivity", 
+                      "specificity", "f1_score", "AUC")
+
+kable(df, col.names = "Values") %>%kable_paper('hover', full_width = F)
+
+```
+
+Model 5 matrices:
+
+```{r}
+pred_5 <- predict(model5,train_clean)
+
+cm2 <- table(true = train_clean$TARGET_FLAG, pred = round(fitted(model5)))
+
+TN <- cm2[4]
+FN <- cm2[3]
+TP <- cm2[1]
+FP <- cm2[2]
+
+accuracy <- (TP + TN)/(TN + FN + TP + FP)
+
+precision <- TP/(TP + FP)
+
+sensitivity <- TP/(TP + FN)
+
+specificity <- TN/(TN + FP)
+  
+f1_score <- 2*TP/(2*TP + FP + FN)
+
+roc_obj <- roc(train_clean$TARGET_FLAG, predictedval)
+
+auc <- auc(roc_obj)
+
+df2 <- c(accuracy, precision, sensitivity, specificity, f1_score, auc)
+names(df2) <- c("Accuracy", " precision", "F1-sensitivity", 
+                      "specificity", "f1_score", "AUC")
+
+kable(df2, col.names = "Values") %>%kable_paper('hover', full_width = F)
+
+```
+
+Model 6 matrices:
+
+```{r}
+pred_6 <- predict(model6,train_clean)
+
+cm3 <- table(true = train_clean$TARGET_FLAG, pred = round(fitted(model6)))
+
+TN <- cm3[4]
+FN <- cm3[3]
+TP <- cm3[1]
+FP <- cm3[2]
+
+accuracy <- (TP + TN)/(TN + FN + TP + FP)
+
+precision <- TP/(TP + FP)
+
+sensitivity <- TP/(TP + FN)
+
+specificity <- TN/(TN + FP)
+  
+f1_score <- 2*TP/(2*TP + FP + FN)
+
+roc_obj <- roc(train_clean$TARGET_FLAG, predictedval)
+
+auc <- auc(roc_obj)
+
+df3 <- c(accuracy, precision, sensitivity, specificity, f1_score, auc)
+names(df3) <- c("Accuracy", " precision", "F1-sensitivity", 
+                      "specificity", "f1_score", "AUC")
+
+kable(df3, col.names = "Values") %>%kable_paper('hover', full_width = F)
+```
+
+Combine all 3 data frame and below table display all matrices.
+
+```{r}
+compar_tbl <- cbind(df, df2, df3)
+colnames(compar_tbl) <- c("Model 4", "Model 5", "Model 6")
+DT::datatable(compar_tbl)
+```
+
+Load test dataset to apply model and predict the car crash. Perform data cleaning and varaibles creation. 
+
+```{r}
+test =
+  read.csv("https://raw.githubusercontent.com/mharrisonbaker/DATA621_GroupWork2/main/HW4/insurance-evaluation-data.csv",
+           header = TRUE) %>% dplyr::select(-INDEX)
+
+dim(test)
+```
+
+```{r include=FALSE}
+
+test$SEX <- stringr::str_remove(test$SEX, "^z_")
+test$MSTATUS <- stringr::str_remove(test$MSTATUS, "^z_")
+test$EDUCATION <- stringr::str_remove(test$EDUCATION, "^z_")
+test$CAR_TYPE <- stringr::str_remove(test$CAR_TYPE, "^z_")
+test$JOB <- stringr::str_remove(test$JOB, "^z_")
+test$URBANICITY <- stringr::str_remove(test$URBANICITY, "^z_")
+
+currencyconv = function(input) {
+  out = sub("\\$", "", input)
+  out = as.numeric(sub(",", "", out))
+  return(out)
+}
+# Replace spaces with underscores
+underscore = function(input) {
+  out = sub(" ", "_", input)
+  return(out)
+}
+
+test = as.tbl(test) %>%
+  mutate_at(c("INCOME","HOME_VAL","BLUEBOOK","OLDCLAIM"),
+            currencyconv) %>%
+  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
+            underscore) %>%
+  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
+            as.factor) %>%
+  mutate(TARGET_FLAG = as.factor(TARGET_FLAG))
+
+na_cnt <- sapply(test, function(x) sum(is.na(x))) %>% kable() %>% kable_styling()
+na_cnt
+
+test$AGE[is.na(test$AGE)] <- mean(test$AGE, na.rm=TRUE)
+test$YOJ[is.na(test$YOJ)] <- mean(test$YOJ, na.rm=TRUE)
+test$HOME_VAL[is.na(test$HOME_VAL)] <- mean(test$HOME_VAL, na.rm=TRUE)
+test$CAR_AGE[is.na(test$CAR_AGE)] <- mean(test$CAR_AGE, na.rm=TRUE)
+test$INCOME[is.na(test$INCOME)] <- mean(test$INCOME, na.rm=TRUE)
+
+
+
+# test <- test[complete.cases(test),]
+
+test_clean <- test
+
+test_clean = as.tbl(test_clean) %>%
+  mutate_at(c("INCOME","HOME_VAL","BLUEBOOK","OLDCLAIM"),
+            currencyconv) %>%
+  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
+            underscore) %>%
+  mutate_at(c("EDUCATION","JOB","CAR_TYPE","URBANICITY"),
+            as.factor) %>%
+  mutate(TARGET_FLAG = as.numeric(TARGET_FLAG))
+
+# Convert indicator variables to 0s and 1s; 1 = Yes, Male for Sex, Commercial for Car Use, Red for RED_CAR, and Highly Urban for URBANICITY
+test_clean$PARENT1 <- ifelse(test_clean$PARENT1=="Yes", 1, 0)
+test_clean$MSTATUS <- ifelse(test_clean$MSTATUS=="Yes", 1, 0)
+test_clean$SEX <- ifelse(test_clean$SEX=="M", 1, 0)
+test_clean$CAR_USE <- ifelse(test_clean$CAR_USE=="Commercial", 1, 0)
+test_clean$RED_CAR <- ifelse(test_clean$RED_CAR=="Yes", 1, 0)
+test_clean$REVOKED <- ifelse(test_clean$REVOKED=="Yes", 1, 0)
+test_clean$URBANICITY <- ifelse(test_clean$URBANICITY == "Highly Urban/ Urban", 1, 0)
+test_clean$TARGET_FLAG <- ifelse(test_clean$TARGET_FLAG == 2, 0, 1)
+#Convert categorical predictor values to indicator variables - EDUCATION, CAR_TYPE, JOB
+#EDUCATION, High school graduate is base case
+test_clean$HSDropout <- ifelse(test_clean$EDUCATION=="<High School", 1, 0)
+test_clean$Bachelors <- ifelse(test_clean$EDUCATION=="Bachelors", 1, 0)
+test_clean$Masters <- ifelse(test_clean$EDUCATION=="Masters", 1, 0)
+test_clean$PhD <- ifelse(test_clean$EDUCATION=="PhD", 1, 0)
+#CAR_TYPE, base case is minivan
+test_clean$Panel_Truck <- ifelse(test_clean$CAR_TYPE=="Panel Truck", 1, 0)
+test_clean$Pickup <- ifelse(test_clean$CAR_TYPE=="Pickup", 1, 0)
+test_clean$Sports_Car <- ifelse(test_clean$CAR_TYPE=="Sports Car", 1, 0)
+test_clean$Van <- ifelse(test_clean$CAR_TYPE=="Van", 1, 0)
+test_clean$SUV <- ifelse(test_clean$CAR_TYPE=="z_SUV", 1, 0)
+#JOB, base case is ""
+test_clean$Professional <- ifelse(test_clean$JOB == "Professional", 1, 0)
+test_clean$Blue_Collar <- ifelse(test_clean$JOB == "Professional", 1, 0)
+test_clean$Clerical <- ifelse(test_clean$JOB == "Clerical", 1, 0)
+test_clean$Doctor <- ifelse(test_clean$JOB == "Doctor", 1, 0)
+test_clean$Lawyer <- ifelse(test_clean$JOB == "Lawyer", 1, 0)
+test_clean$Manager <- ifelse(test_clean$JOB == "Manager", 1, 0)
+test_clean$Home_Maker <- ifelse(test_clean$JOB == "Home Maker", 1, 0)
+test_clean$Student <- ifelse(test_clean$JOB == "Student", 1, 0)
+
+test_clean$TARGET_FLAG <- as.numeric(test_clean$TARGET_FLAG)
+test_clean$TARGET_AMT <- as.numeric(test_clean$TARGET_AMT)
+test_clean$PARENT1 <- as.numeric(test_clean$PARENT1)
+test_clean$MSTATUS <- as.numeric(test_clean$MSTATUS)
+test_clean$SEX <- as.numeric(test_clean$SEX)
+test_clean$CAR_USE <- as.numeric(test_clean$CAR_USE)
+test_clean$RED_CAR <- as.numeric(test_clean$RED_CAR)
+test_clean$REVOKED <- as.numeric(test_clean$REVOKED)
+test_clean$URBANICITY <- as.numeric(test_clean$URBANICITY)
+test_clean$HSDropout <- as.numeric(test_clean$HSDropout)
+test_clean$Bachelors <- as.numeric(test_clean$Bachelors)
+test_clean$Masters <- as.numeric(test_clean$Masters)
+test_clean$PhD <- as.numeric(test_clean$PhD)
+test_clean$Panel_Truck <- as.numeric(test_clean$Panel_Truck)
+test_clean$Pickup <- as.numeric(test_clean$Pickup)
+test_clean$Sports_Car <- as.numeric(test_clean$Sports_Car)
+test_clean$Van <- as.numeric(test_clean$Van)
+test_clean$SUV <- as.numeric(test_clean$SUV)
+test_clean$Professional <- as.numeric(test_clean$Professional)
+test_clean$Blue_Collar <- as.numeric(test_clean$Blue_Collar)
+test_clean$Clerical <- as.numeric(test_clean$Clerical)
+test_clean$Doctor <- as.numeric(test_clean$Doctor)
+test_clean$Lawyer <- as.numeric(test_clean$Lawyer)
+test_clean$Manager <- as.numeric(test_clean$Manager)
+test_clean$Home_Maker <- as.numeric(test_clean$Home_Maker)
+test_clean$Student <- as.numeric(test_clean$Student)
+
+# view data
+# head(test_clean)
+```
+
+Apply Model 5 on test data to make the prediction
+
+```{r}
+TARGET_FLAG <- predict(model5, newdata = test_clean)
+# Classifying the evaluate dataset into claim = 0 or 1
+y_pred_num <- ifelse(TARGET_FLAG > 0.5, 1, 0)
+y_pred <- factor(y_pred_num, levels=c(0, 1))
+```
+
+```{r}
+summary(y_pred)
+```
+
+This model predicts that 1650 insurance customers would have an auto accident, while 491 will not.
