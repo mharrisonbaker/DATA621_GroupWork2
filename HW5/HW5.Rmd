@@ -1,0 +1,547 @@
+---
+title: 'DATA 621: Homework 5'
+author: "Matthew Baker, Don Padmaperuma, Subhalaxmi Rout, Erinda Budo"
+date: "12/10/2020"
+output:
+  prettydoc::html_pretty: null
+  html_document:
+    df_print: paged
+  pdf_document:
+    df_print: kable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Overview
+
+In this homework assignment, you will explore, analyze and model a data set containing information on
+approximately 12,000 commercially available wines. The variables are mostly related to the chemical properties of
+the wine being sold. The response variable is the number of sample cases of wine that were purchased by wine
+distribution companies after sampling a wine. These cases would be used to provide tasting samples to
+restaurants and wine stores around the United States. The more sample cases purchased, the more likely is a
+wine to be sold at a high end restaurant. A large wine manufacturer is studying the data in order to predict the
+number of wine cases ordered based upon the wine characteristics. If the wine manufacturer can predict the
+number of cases, then that manufacturer will be able to adjust their wine offering to maximize sales.
+
+Your objective is to build a count regression model to predict the number of cases of wine that will be sold
+given certain properties of the wine. HINT: Sometimes, the fact that a variable is missing is actually predictive of
+the target. You can only use the variables given to you (or variables that you derive from the variables provided).
+Below is a short description of the variables of interest in the data set:
+
+![image of data description](/Users/subhalaxmirout/DATA 621/wine.png)
+
+#### Count Regression Model
+
+Count Regression model is a regression model that relates a non-negative integer value (0, 1, 2, 3, etc.) field of interest (a target variable) to one or more fields that are expected to have an influence on the target variable, and are often called predictor variables.
+
+
+### Objective
+
+Our objective is to build poisson regression models, negative binomial regression models and multiple linear regression models on the training data and predict the number of cases of wine that will be sold given certain properties of the wine. Given 2 datasets (i.e training and evaluation), Using the training data set, will evaluate the performance of the count regression model and make predictions using the evaluation data set.
+
+#### Library load
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(kableExtra)
+library(hrbrthemes)
+library(ggthemes)
+library(visdat)
+library(pscl)
+library(MASS)
+library(corrplot)
+library(VIM)
+library(tidyr)
+```
+
+#### Data Load
+
+Train dataset consists of 12795 observations (rows) and 15 features (variables).
+
+```{r}
+wine_train <-
+  read.csv("https://raw.githubusercontent.com/mharrisonbaker/DATA621_GroupWork2/main/HW5/wine-training-data.csv", 
+           header = TRUE) %>% dplyr::select(-INDEX)
+dim(wine_train)
+```
+```{r}
+library(kableExtra)
+kable(wine_train[1:10,]) %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),latex_options="scale_down")
+```
+#### Data Exploration
+
+Summary of data shows some variables having NAs, we will see the disribution of these using boxplot to identify outliers.
+
+```{r}
+summary(wine_train)
+```
+
+```{r echo=FALSE}
+ggplot(data = wine_train, aes(x = "Target", y=wine_train$TARGET)) + geom_boxplot(
+        
+        # custom boxes
+        color="blue",
+        fill="blue",
+        alpha=0.2, 
+        outlier.colour="red",
+        outlier.fill="red",
+        outlier.size=3)
+ggplot(data = wine_train, aes(x = "FixedAcidity", y=wine_train$FixedAcidity)) + geom_boxplot(
+        
+        # custom boxes
+        color="blue",
+        fill="blue",
+        alpha=0.2, 
+        outlier.colour="red",
+        outlier.fill="red",
+        outlier.size=3)
+ggplot(data = wine_train, aes(x = "VolatileAcidity", y=wine_train$VolatileAcidity)) + geom_boxplot(
+        
+        # custom boxes
+        color="blue",
+        fill="blue",
+        alpha=0.2, 
+        outlier.colour="red",
+        outlier.fill="red",
+        outlier.size=3)
+ggplot(data = wine_train, aes(x = "CitricAcid", y=wine_train$CitricAcid)) + geom_boxplot(
+        
+        # custom boxes
+        color="blue",
+        fill="blue",
+        alpha=0.2, 
+        outlier.colour="red",
+        outlier.fill="red",
+        outlier.size=3)
+ggplot(data = wine_train, aes(x = "ResidualSugar", y=wine_train$ResidualSugar)) + geom_boxplot(
+        
+        # custom boxes
+        color="blue",
+        fill="blue",
+        alpha=0.2, 
+        outlier.colour="red",
+        outlier.fill="red",
+        outlier.size=3)
+ggplot(data = wine_train, aes(x = "Chlorides", y=wine_train$Chlorides)) + geom_boxplot(
+        
+        # custom boxes
+        color="blue",
+        fill="blue",
+        alpha=0.2, 
+        outlier.colour="red",
+        outlier.fill="red",
+        outlier.size=3)
+ggplot(data = wine_train, aes(x = "FreeSulfurDioxide", y=wine_train$FreeSulfurDioxide)) + geom_boxplot(
+        
+        # custom boxes
+        color="blue",
+        fill="blue",
+        alpha=0.2, 
+        outlier.colour="red",
+        outlier.fill="red",
+        outlier.size=3)
+ggplot(data = wine_train, aes(x = "TotalSulfurDioxide", y=wine_train$TotalSulfurDioxide)) + geom_boxplot(
+        
+        # custom boxes
+        color="blue",
+        fill="blue",
+        alpha=0.2, 
+        outlier.colour="red",
+        outlier.fill="red",
+        outlier.size=3)
+ggplot(data = wine_train, aes(x = "Density", y=wine_train$Density)) + geom_boxplot(
+        
+        # custom boxes
+        color="blue",
+        fill="blue",
+        alpha=0.2, 
+        outlier.colour="red",
+        outlier.fill="red",
+        outlier.size=3)
+ggplot(data = wine_train, aes(x = "pH", y=wine_train$pH)) + geom_boxplot(
+        
+        # custom boxes
+        color="blue",
+        fill="blue",
+        alpha=0.2, 
+        outlier.colour="red",
+        outlier.fill="red",
+        outlier.size=3)
+ggplot(data = wine_train, aes(x = "Sulphates", y=wine_train$Sulphates)) + geom_boxplot(
+        
+        # custom boxes
+        color="blue",
+        fill="blue",
+        alpha=0.2, 
+        outlier.colour="red",
+        outlier.fill="red",
+        outlier.size=3)
+ggplot(data = wine_train, aes(x = "Alcohol", y=wine_train$Alcohol)) + geom_boxplot(
+        
+        # custom boxes
+        color="blue",
+        fill="blue",
+        alpha=0.2, 
+        outlier.colour="red",
+        outlier.fill="red",
+        outlier.size=3)
+ggplot(data = wine_train, aes(x = "LabelAppeal", y=wine_train$LabelAppeal)) + geom_boxplot(
+        
+        # custom boxes
+        color="blue",
+        fill="blue",
+        alpha=0.2, 
+        outlier.colour="red",
+        outlier.fill="red",
+        outlier.size=3)
+ggplot(data = wine_train, aes(x = "AcidIndex", y=wine_train$AcidIndex)) + geom_boxplot(
+        
+        # custom boxes
+        color="blue",
+        fill="blue",
+        alpha=0.2, 
+        outlier.colour="red",
+        outlier.fill="red",
+        outlier.size=3)
+ggplot(data = wine_train, aes(x = "STARS", y=wine_train$STARS)) + geom_boxplot(
+        
+        # custom boxes
+        color="blue",
+        fill="blue",
+        alpha=0.2, 
+        outlier.colour="red",
+        outlier.fill="red",
+        outlier.size=3)
+  
+```
+
+#### Data distributions 
+
+```{r echo=FALSE, fig.align='center'}
+ggplot(data = wine_train, aes(TARGET)) +
+    geom_histogram(fill="#69b3a2", color="#e9ecef", alpha=0.9, bins = 10, boundary=1) +
+    ggtitle("Histogram of Target") + xlab("Target") +
+    theme_economist() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 15)
+    ) + scale_x_continuous(breaks = seq(0, 9, 1))
+ggplot(data = wine_train, aes(FixedAcidity)) +
+    geom_histogram(fill="#69b3a2", color="#e9ecef", alpha=0.9, bins = 10) +
+    ggtitle("Histogram of FixedAcidity") + xlab("FixedAcidity") +
+    theme_economist() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 15)
+    ) 
+ggplot(data = wine_train, aes(VolatileAcidity)) +
+    geom_histogram(fill="#69b3a2", color="#e9ecef", alpha=0.9, bins = 10) +
+    ggtitle("Histogram of VolatileAcidity") + xlab("VolatileAcidity") +
+    theme_economist() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 15)
+    ) 
+ggplot(data = wine_train, aes(CitricAcid)) +
+    geom_histogram(fill="#69b3a2", color="#e9ecef", alpha=0.9, bins = 10) +
+    ggtitle("Histogram of CitricAcid") + xlab("CitricAcid") +
+    theme_economist() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 15)
+    ) 
+ggplot(data = wine_train, aes(ResidualSugar)) +
+    geom_histogram(fill="#69b3a2", color="#e9ecef", alpha=0.9, bins = 10) +
+    ggtitle("Histogram of ResidualSugar") + xlab("ResidualSugar") +
+    theme_economist() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 15)
+    ) 
+ggplot(data = wine_train, aes(Chlorides)) +
+    geom_histogram(fill="#69b3a2", color="#e9ecef", alpha=0.9, bins = 10) +
+    ggtitle("Histogram of Chlorides") + xlab("Chlorides") +
+    theme_economist() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 15)
+    ) 
+ggplot(data = wine_train, aes(FreeSulfurDioxide)) +
+    geom_histogram(fill="#69b3a2", color="#e9ecef", alpha=0.9, bins = 10) +
+    ggtitle("Histogram of FreeSulfurDioxide") + xlab("FreeSulfurDioxide") +
+    theme_economist() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 15)
+    ) 
+ggplot(data = wine_train, aes(TotalSulfurDioxide)) +
+    geom_histogram(fill="#69b3a2", color="#e9ecef", alpha=0.9, bins = 10) +
+    ggtitle("Histogram of TotalSulfurDioxide") + xlab("TotalSulfurDioxide") +
+    theme_economist() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 15)
+    ) 
+ggplot(data = wine_train, aes(Density)) +
+    geom_histogram(fill="#69b3a2", color="#e9ecef", alpha=0.9, bins = 10) +
+    ggtitle("Histogram of Density") + xlab("Density") +
+    theme_economist() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 15)
+    ) 
+ggplot(data = wine_train, aes(pH)) +
+    geom_histogram(fill="#69b3a2", color="#e9ecef", alpha=0.9, bins = 10) +
+    ggtitle("Histogram of pH") + xlab("pH") +
+    theme_economist() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 15)
+    ) 
+ggplot(data = wine_train, aes(Sulphates)) +
+    geom_histogram(fill="#69b3a2", color="#e9ecef", alpha=0.9, bins = 10) +
+    ggtitle("Histogram of Sulphates") + xlab("Sulphates") +
+    theme_economist() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 15)
+    ) 
+ggplot(data = wine_train, aes(Alcohol)) +
+    geom_histogram(fill="#69b3a2", color="#e9ecef", alpha=0.9, bins = 10) +
+    ggtitle("Histogram of Alcohol") + xlab("Alcohol") +
+    theme_economist() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 15)
+    ) 
+ggplot(data = wine_train, aes(LabelAppeal)) +
+    geom_histogram(fill="#69b3a2", color="#e9ecef", alpha=0.9, bins = 5) +
+    ggtitle("Histogram of LabelAppeal") + xlab("LabelAppeal") +
+    theme_economist() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 15)
+    ) 
+ggplot(data = wine_train, aes(AcidIndex)) +
+    geom_histogram(fill="#69b3a2", color="#e9ecef", alpha=0.9, bins = 8) +
+    ggtitle("Histogram of AcidIndex") + xlab("AcidIndex") +
+    theme_economist() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 15)
+    ) 
+ggplot(data = wine_train, aes(STARS)) +
+    geom_histogram(fill="#69b3a2", color="#e9ecef", alpha=0.9,bins = 5, boundary=1) +
+    ggtitle("Histogram of STARS") + xlab("STARS") +
+    theme_economist() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 15)
+    ) + scale_x_continuous(breaks = seq(1, 4, 1))
+```
+
+All variables are symetrically unimodal distributed except TARGET.
+
+#### Correlation of variables
+
+STARTS and LabelAppeal seems to have a positive correlation with the number of cases sold. 
+
+```{r}
+library(kableExtra)
+kable(cor(drop_na(wine_train))[,14], escape = F) %>%
+  kable_styling("striped", full_width = F) %>%
+  column_spec(1, bold = T) %>%
+  scroll_box(height = "500px")
+```
+```{r}
+library(corrgram)
+corrgram(drop_na(wine_train), order=TRUE,
+         upper.panel=panel.cor, main="correlation")
+```
+
+#### Missing Values
+
+
+```{rfig.align='center'}
+visdat::vis_miss(wine_train)
+```
+
+
+#### Data Preparation
+
+ResidualSugar, Chlorides, FreeSulfurDioxide, TotalSulfurDioxide, pH, Sulphates, Alcohol, and STARS have NAs. Replace NAs with median value. 
+
+```{r}
+wine_train$ResidualSugar[is.na(wine_train$ResidualSugar)] <- median(wine_train$ResidualSugar, na.rm=TRUE)
+wine_train$Chlorides[is.na(wine_train$Chlorides)] <- median(wine_train$Chlorides, na.rm=TRUE)
+wine_train$FreeSulfurDioxide[is.na(wine_train$FreeSulfurDioxide)] <- median(wine_train$FreeSulfurDioxide, na.rm=TRUE)
+wine_train$TotalSulfurDioxide[is.na(wine_train$TotalSulfurDioxide)] <- median(wine_train$TotalSulfurDioxide, na.rm=TRUE)
+wine_train$pH[is.na(wine_train$pH)] <- median(wine_train$pH, na.rm=TRUE)
+wine_train$Sulphates[is.na(wine_train$Sulphates)] <- median(wine_train$Sulphates, na.rm=TRUE)
+wine_train$Alcohol[is.na(wine_train$Alcohol)] <- median(wine_train$Alcohol, na.rm=TRUE)
+wine_train$STARS[is.na(wine_train$STARS)] <- median(wine_train$STARS, na.rm=TRUE)
+# to check NAS exist or not
+visdat::vis_miss(wine_train)
+```
+
+#### Build Models
+
+We will build poisson regression models, negative binomial regression models, multiple linear regression models, and
+zero-inflated poisson model using all variables and backward approach.
+
+
+##### poisson regression model1: all variables
+
+```{r}
+model1 = glm(TARGET ~  ., data=wine_train, family=poisson)
+summary(model1)
+plot(model1)
+```
+
+* Residual vs fitted plot shows red line is fairly flat so linearty assumption is met. 
+* QQ-plot shows some observations are fall on the line with minimal deviatation
+* Scale-Location plot helps us to check the assumption of equal variance (homoscedasticity). Here red color line not completely staright but it is not bad.
+* Residual vs Leverage plot helps us to determine if we have influential outliers in our data. Residuals are not present outside of the cooks distance
+
+
+#####  poisson regression model2: with selected variables
+
+Remove acidity variables and chemical variables from models. We will build one more glm model, using the variables:Density, PH, Sulphates, Alcohol, LabelAppeal, AcidIndex, and STARS.
+
+
+```{r}
+model2 = glm(TARGET ~ 
+                 Alcohol + LabelAppeal + AcidIndex + STARS, data=wine_train, family=poisson)
+summary(model2)
+plot(model2)
+```
+
+This model looks better than first model. 
+
+#####  negative binomial regression model3: with all variables
+
+```{r}
+model3 <- glm.nb(TARGET ~ ., data = wine_train)
+summary(model3)
+plot(model3)
+```
+
+#####  negative binomial regression model4: with selected variables
+
+```{r}
+model4 <- glm.nb(TARGET ~ Alcohol + LabelAppeal + AcidIndex + STARS, data = wine_train)
+summary(model4)
+plot(model4)
+```
+
+##### Linear Model model5: with all variables
+
+```{r}
+model5 <- lm(TARGET ~ ., data = wine_train)
+summary(model5)
+plot(model5)
+```
+
+##### Linear Model model6: with selected variables
+
+Added CitricAcid, Sulphates, VolatileAcidity,  Chlorides in to the model, these varaibles having low p-value to get better fit model.
+
+```{r}
+model6 <- lm(TARGET ~ CitricAcid + Sulphates + VolatileAcidity + Chlorides +
+             Alcohol + LabelAppeal + AcidIndex + STARS, data = wine_train)
+summary(model6)
+plot(model6)
+```
+
+Above model shows Multiple R-squared 0.2846 means model explains 29% variation in the response variable.
+
+
+##### Zero inflation model7: poisson
+
+Zero inflation model:
+
+Zero-inflated poisson regression is used to model count data that has an excess of zero counts. Further, theory suggests that the excess zeros are generated by a separate process from the count values and that the excess zeros can be modeled independently. Thus, the zip model has two parts, a poisson count model and the logit model for predicting excess zeros.
+
+```{r}
+model7 <- zeroinfl(TARGET ~ . | STARS, data = wine_train, dist = 'poisson')
+summary(model7)
+```
+
+##### Zero inflation model8: negative binomial 
+
+```{r}
+model8 <- zeroinfl(TARGET ~ . | STARS, data = wine_train, dist = 'negbin')
+summary(model8)
+```
+
+#### Model Selection 
+
+Models by matrices MSE and AIC.
+
+```{r}
+aic1 <- model1$aic
+aic2 <- model2$aic
+aic3 <- model3$aic
+aic4 <- model4$aic
+aic5 <- model5$aic
+aic6 <- model6$aic
+aic7 <- model7$aic
+aic8 <- model8$aic
+mse1 <- mean((wine_train$TARGET - predict(model1))^2)
+mse2 <- mean((wine_train$TARGET - predict(model2))^2)
+mse3 <- mean((wine_train$TARGET - predict(model3))^2)
+mse4 <- mean((wine_train$TARGET - predict(model4))^2)
+mse5 <- mean((wine_train$TARGET - predict(model5))^2)
+mse6 <- mean((wine_train$TARGET - predict(model6))^2)
+mse7 <- mean((wine_train$TARGET - predict(model7))^2)
+mse8 <- mean((wine_train$TARGET - predict(model8))^2)
+MSE <- c(mse1, mse2, mse3, mse4, mse5, mse6, mse7, mse8)
+AIC <- c(aic1, aic2, aic3, aic4, aic5, aic6, aic7, aic8)
+compare_df <- cbind(MSE,AIC)
+rownames(compare_df) <- c("Model1", "Model2", "Model3", "Model4", "Model5", "Model6", "Model7", "Model8")
+DT::datatable(compare_df)
+```
+
+Model 6 working fine than other models. Apply model 6 on test data.
+
+Load test dataset to apply model and predict the TARGET.  
+
+```{r}
+wine_test =
+  read.csv("https://raw.githubusercontent.com/mharrisonbaker/DATA621_GroupWork2/main/HW5/wine-evaluation-data.csv",
+           header = TRUE) %>% dplyr::select(-IN)
+dim(wine_test)
+DT::datatable(head(wine_test))
+```
+
+##### Test data cleaning
+
+Remove Index column and replace NAS with Median value.
+
+```{r}
+summary(wine_test)
+wine_test$ResidualSugar[is.na(wine_test$ResidualSugar)] <- median(wine_test$ResidualSugar, na.rm=TRUE)
+wine_test$Chlorides[is.na(wine_test$Chlorides)] <- median(wine_test$Chlorides, na.rm=TRUE)
+wine_test$FreeSulfurDioxide[is.na(wine_test$FreeSulfurDioxide)] <- median(wine_test$FreeSulfurDioxide, na.rm=TRUE)
+wine_test$TotalSulfurDioxide[is.na(wine_test$TotalSulfurDioxide)] <- median(wine_test$TotalSulfurDioxide, na.rm=TRUE)
+wine_test$pH[is.na(wine_test$pH)] <- median(wine_test$pH, na.rm=TRUE)
+wine_test$Sulphates[is.na(wine_test$Sulphates)] <- median(wine_test$Sulphates, na.rm=TRUE)
+wine_test$Alcohol[is.na(wine_test$Alcohol)] <- median(wine_test$Alcohol, na.rm=TRUE)
+wine_test$STARS[is.na(wine_test$STARS)] <- median(wine_test$STARS, na.rm=TRUE)
+# to check NAS exist or not
+visdat::vis_miss(wine_test)
+```
+
+```{r}
+wine_test$TARGET <- round(predict(model6, newdata=wine_test))
+head(wine_test)
+```
+
+Add 3 new column in `wine_test` for a classification of wine - poor, okay, and good. Poor will be those with scores of 0,1,2,3; 4 will be  okay and more than 4 will be good.
+
+These newly added 3 column will show TRUE and FALSE values based on TARGET.
+
+```{r}
+library(kableExtra)
+wine_test$Poor <- wine_test$TARGET <= 3
+wine_test$Okay <- wine_test$TARGET == 4
+wine_test$Good <- wine_test$TARGET >= 5
+# created copy of test_wine and move last 3 col to 2,3,4 index 
+wine_test_new <-   wine_test %>% dplyr::select(TARGET, Poor, Okay, Good, everything())
+kable(wine_test_new[1:20,])  %>% 
+  kable_styling(full_width = T)
+```
+ 
+ Reference:
+ 
+ https://stats.idre.ucla.edu/r/dae/negative-binomial-regression/
+ 
+ https://stats.idre.ucla.edu/r/dae/zip/
