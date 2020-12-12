@@ -1,0 +1,197 @@
+---
+title: "IBM HR Attrition"
+author: "Don Padmaperuma"
+date: "12/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(grid)
+library(gridExtra)
+library(psych)
+library(corrplot)
+```
+
+## Methodology
+
+We obtained the data set from Kaggle.com using this link:
+[https://www.kaggle.com/pavansubhasht/ibm-hr-analytics-attrition-dataset]. The fictional data set was originally created by IBM data scientists to uncover the facts that lead to employee attrition and explore important question like what are the important factors influence attrition among employees. Also the original dataset can be accessed from the Link- https://www.ibm.com/communities/analytics/watson-analytics-blog/hr-employee-attrition/. Then it was saved in our group github repository as a .csv file for the convenience of the analysis purposes. The Attrition dataset had 1470 observations with 35 variables. Out of those 35 there exists the targen variable Attrition with possible outcomes "Yes" and "No". With our experiment results We will do the analysis based on Gender, Education, Income, Working Environment, and lastly, build a predictive model to determine whether an employee is going to quit or not.  
+
+
+## Experimantation and Results
+
+
+```{r}
+hr_data <- 
+  read.csv("https://raw.githubusercontent.com/mharrisonbaker/DATA621_GroupWork2/main/Final%20Project/WA_Fn-UseC_-HR-Employee-Attrition.csv")
+```
+
+
+```{r}
+colnames(hr_data)[1] <- "Age"
+```
+
+### Data Preparation
+
+#### Checking for missing values and removing non value attributes
+
+```{r}
+apply(is.na(hr_data), 2, sum)
+```
+
+```{r}
+hr_data$EmployeeNumber<- NULL
+hr_data$StandardHours <- NULL
+hr_data$Over18 <- NULL
+hr_data$EmployeeCount <- NULL
+cat("Data Set has ",dim(hr_data)[1], " Rows and ", dim(hr_data)[2], " Columns" )
+```
+Fortunately no missing data or duplicate data.
+
+Also, some of the attributes that are categorical are represented as integers in the dataset. We need to change them to categorical.
+
+```{r}
+hr_data$Education <- factor(hr_data$Education)
+hr_data$EnvironmentSatisfaction <- factor(hr_data$EnvironmentSatisfaction)
+hr_data$JobInvolvement <- factor(hr_data$JobInvolvement)
+hr_data$JobLevel <- factor(hr_data$JobLevel)
+hr_data$JobSatisfaction <- factor(hr_data$JobSatisfaction)
+hr_data$PerformanceRating <- factor(hr_data$PerformanceRating)
+hr_data$RelationshipSatisfaction <- factor(hr_data$RelationshipSatisfaction)
+hr_data$StockOptionLevel <- factor(hr_data$StockOptionLevel)
+hr_data$WorkLifeBalance <- factor(hr_data$WorkLifeBalance)
+```
+
+### Visualization
+
+In this section, we can visualize the infuance of each variable on Attrition of the organization.
+
+##### Age plot and Fig 1 
+
+```{r}
+ggplot(data=hr_data, aes(Age)) + 
+        geom_histogram(breaks=seq(20, 50, by=2), 
+                       col="red", 
+                       aes(fill=..count..))+
+        labs(x="Age", y="Count")+
+        scale_fill_gradient("Count", low="blue", high="dark green")
+```
+
+```{r}
+travelPlot <- ggplot(hr_data,aes(BusinessTravel,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+depPlot <- ggplot(hr_data,aes(Department,fill = Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+distPlot <- ggplot(hr_data,aes(DistanceFromHome,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+ratePlot <- ggplot(hr_data,aes(DailyRate,Attrition))+geom_point(size=4,alpha = 0.05)
+grid.arrange(travelPlot,depPlot,distPlot,ratePlot,ncol=2,top = "Fig 1")
+```
+
+
+1. Age: We see that majority of employees leaving the org are around 30 Years (year 28-36). Average age is between 30 to 40.
+2. Business Travel: Among people who leave, most travel frequently or rarely.
+3. Department: Among people attrited employees from HR dept. are less.It is because of low proportion of HR in the organization(Fig 1).
+4. Distance From Home: Contrary to normal assumptions, a mojority of employees who have left the organization are near to the Office.
+5. Daily Rate: We are not able to see any distinguishable feature here(Fig 1).
+
+##### Fig 2 
+
+```{r}
+eduPlot <- ggplot(hr_data,aes(Education,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+edufieldPlot <- ggplot(hr_data,aes(EducationField,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+envPlot <- ggplot(hr_data,aes(EnvironmentSatisfaction,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+genPlot <- ggplot(hr_data,aes(Gender,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+grid.arrange(eduPlot,edufieldPlot,envPlot,genPlot,ncol=2,top = "Fig 2")
+```
+ 
+
+6. Education: From the data we know that, 1-‘Below College’, 2-‘College’, 3-‘Bachelor’, 4-‘Master’ 5 ‘Doctor’. Looking at the plot we see that very few Doctors attrite. May be because of less number. Based on the data most of the employees have Bachelors degree level education.
+7. Education Field: On lines of the trend in Departments, a minority of HR educated employees leave and it is majorly because of low proportion of the HR in the organization.
+8. Employee Count : It is an insignificant variable for us.
+9. Employee Number: It is also an insignificant variable for us.
+10. Environment Satisfaction: Ratings stand for: 1-‘Low’, 2-‘Medium’, 3-‘High’, 4-‘Very High’. We don’t see any distinguishable feature(Fig 2).
+
+##### Fig 3
+
+```{r}
+genPlot <- ggplot(hr_data,aes(Gender,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+hourlyPlot <- ggplot(hr_data,aes(HourlyRate,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+jobInvPlot <- ggplot(hr_data,aes(JobInvolvement,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+jobLevelPlot <- ggplot(hr_data,aes(JobLevel,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+jobSatPlot <- ggplot(hr_data,aes(JobSatisfaction,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+grid.arrange(genPlot, hourlyPlot,jobInvPlot,jobLevelPlot, jobSatPlot,ncol=2, top = "Fig 3")
+```
+
+11. Gender: Majority of separated employees are Male and the reason might be because around 61% of employees in the dataset are Male.
+12. HourlyRate : There seems to be no straightforward relation with the Daily Rate of the employees. 
+13. Job Involvement: Ratings stand for 1-‘Low’, 2-‘Medium’, 3-‘High’, 4-‘Very High’. Majority of employees who leave are either very highly involved or least involved in their Jobs. 
+14. JobLevel: Job Level increases the number of people quitting decreases. 
+15. Job Satisfaction: As per data 1-‘Low’, 2-‘Medium’, 3-‘High’, 4-‘Very High’. We see higher attrition levels among lower Job Satisfaction levels.
+
+##### Fig 4
+
+```{r}
+marPlot <- ggplot(hr_data,aes(MaritalStatus,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+monthlyIncPlot <- ggplot(hr_data,aes(MonthlyIncome,fill=Attrition))+geom_density() + scale_fill_brewer(palette = "Set1")
+monthlyRatePlot <- ggplot(hr_data,aes(MonthlyRate,fill=Attrition))+geom_density() + scale_fill_brewer(palette = "Set1")
+numCompPlot <- ggplot(hr_data,aes(NumCompaniesWorked,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+grid.arrange(marPlot,monthlyIncPlot,monthlyRatePlot,numCompPlot,ncol=2,top = "Fig 4")
+```
+
+16. Marital Status:Attrition is on higher side for Single and lowest for Divorced employees. Most employees are married.
+17. Monthly Income: We see higher levels of attrition among the lower segment of monthly income. If looked at in isolation, might be due to dissatisfaction of income.Higher number of employees earn less.
+18. Monthly Rate: We don’t see any inferable trend from this. Also no straightforwad relation with Monthly Income.
+19. Number of Companies Worked: We see a clear indication that many people who have worked only in One company before quit a lot.
+
+##### Fig 5
+
+```{r}
+overTimePlot <- ggplot(hr_data,aes(OverTime,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+hikePlot <- ggplot(hr_data,aes(PercentSalaryHike,Attrition))+geom_point(size=4,alpha = 0.01)
+perfPlot <- ggplot(hr_data,aes(PerformanceRating,fill = Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+RelSatPlot <- ggplot(hr_data,aes(RelationshipSatisfaction,fill = Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+grid.arrange(overTimePlot,hikePlot,perfPlot,RelSatPlot,ncol=2,top = "Fig 5")
+```
+20. Over Time: Larger Proportion of Overtime Employees are quitting.
+21. Percent Salary Hike: We see that people with less than 15% hike have more chances to leave.
+22. Performance Rating: 1-‘Low’, 2-‘Good’, 3-‘Excellent’, 4-‘Outstanding’. We see that we have employees of only 3 and 4 ratings. Lesser proportion of 4 raters quit.
+23. Relationship Satisfaction: 1-‘Low’, 2-‘Medium’, 3-‘High’, 4-‘Very High’. Higher number of people with 3 or more rating are quitiing. There are considerable amount of low and medium relationship satisfaction in this organization. 
+
+##### Fig 6
+
+```{r}
+StockPlot <- ggplot(hr_data,aes(StockOptionLevel,fill = Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+workingYearsPlot <- ggplot(hr_data,aes(TotalWorkingYears,fill = Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+TrainTimesPlot <- ggplot(hr_data,aes(TrainingTimesLastYear,fill = Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+WLBPlot <- ggplot(hr_data,aes(WorkLifeBalance,fill = Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+grid.arrange(StockPlot,workingYearsPlot,TrainTimesPlot,WLBPlot,ncol=2,top = "Fig 6")
+```
+24. Stock Option Level: Larger proportions of levels 1 & 2 tend to quit more.
+25. Total Working Years: We see larger proportions of people with 1 year of experiences quitting the organization also in bracket of 1-10 Years. Higher the number of experience you have, you tend to stay in the job. 
+26. Traning Times Last Year: This indicates the no of training interventions the employee has attended. People who have been trained 2-4 times is an area of concern.
+27. Work Life Balance:Ratings as per Metadata is 1 ‘Bad’ 2 ‘Good’ 3 ‘Better’ 4 ‘Best’. As expected larger proportion of 1 rating quit, but absolute number wise 3 is on higher side.
+
+##### Fig 7
+
+```{r}
+YearAtComPlot <- ggplot(hr_data,aes(YearsAtCompany,fill = Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+YearInCurrPlot <- ggplot(hr_data,aes(YearsInCurrentRole,fill = Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+YearsSinceProm <- ggplot(hr_data,aes(YearsSinceLastPromotion,fill = Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+YearsCurrManPlot <- ggplot(hr_data,aes(YearsWithCurrManager,fill = Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+grid.arrange(YearAtComPlot,YearInCurrPlot,YearsSinceProm,YearsCurrManPlot,ncol=2,top = "Fig 7")
+```
+
+28. Years at Company: Larger proportion of new comers are quitting the organization. Which sidelines the recruitment efforts of the organization.
+29. Years In Current Role: Plot shows a larger proportion with just 0 years quitting. May be a role change is a trigger for Quitting.
+30. Years Since Last Promotion: Larger proportion of people who have been promoted recently have quit the organization.
+31. Years With Current Manager: As expected a new Manager is a big cause for quitting.
+
+
+
+
+
+
