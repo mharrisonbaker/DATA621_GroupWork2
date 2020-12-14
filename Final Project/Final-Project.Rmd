@@ -1,0 +1,618 @@
+---
+title: "Final Project"
+author: "Matthew Baker, Don Padmaperuma, Subhalaxmi Rout, Erinda Budo"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  prettydoc::html_pretty: 
+    theme: tactile
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+### Abstract
+
+HR Analytics finds out the people-related trends in the data and helps the HR Department take the appropriate steps to keep the organization running smoothly and profitably. Attrition is a corporate setup is one of the complex challenges that the people managers and the HRs personnel have to deal with it.
+
+In this research assignment, we investigated data on employee attrition of a company. This is a fictional data set created by IBM data scientists. 
+
+We have collected this dataset from Kaggle, using the below link:
+https://www.kaggle.com/pavansubhasht/ibm-hr-analytics-attrition-dataset
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(grid)
+library(gridExtra)
+library(psych)
+library(corrplot)
+library(rpart)
+library(caTools)
+library(e1071)
+library(xgboost)
+library(randomForest)
+library(pROC)
+library(kableExtra)
+
+```
+
+## Methodology
+
+We obtained the data set from Kaggle.com using this link:
+[https://www.kaggle.com/pavansubhasht/ibm-hr-analytics-attrition-dataset]. The fictional data set was originally created by IBM data scientists to uncover the facts that lead to employee attrition and explore important question like what are the important factors influence attrition among employees. Also the original dataset can be accessed from the Link- https://www.ibm.com/communities/analytics/watson-analytics-blog/hr-employee-attrition/. Then it was saved in our group github repository as a .csv file for the convenience of the analysis purposes. The Attrition dataset had 1470 observations with 35 variables. Out of those 35 there exists the targen variable Attrition with possible outcomes "Yes" and "No". With our experiment results We will do the analysis based on Gender, Education, Income, Working Environment, and lastly, build a predictive model to determine whether an employee is going to quit or not.  
+
+
+## Experimantation and Results
+
+
+```{r}
+hr_data <- 
+  read.csv("https://raw.githubusercontent.com/mharrisonbaker/DATA621_GroupWork2/main/Final%20Project/WA_Fn-UseC_-HR-Employee-Attrition.csv")
+```
+
+
+```{r}
+colnames(hr_data)[1] <- "Age"
+```
+
+### Data Preparation
+
+#### Checking for missing values and removing non value attributes
+
+```{r}
+apply(is.na(hr_data), 2, sum)
+```
+
+```{r}
+hr_data$EmployeeNumber<- NULL
+hr_data$StandardHours <- NULL
+hr_data$Over18 <- NULL
+hr_data$EmployeeCount <- NULL
+cat("Data Set has ",dim(hr_data)[1], " Rows and ", dim(hr_data)[2], " Columns" )
+```
+Fortunately no missing data or duplicate data.
+
+Also, some of the attributes that are categorical are represented as integers in the dataset. We need to change them to categorical.
+
+```{r}
+hr_data$Education <- factor(hr_data$Education)
+hr_data$EnvironmentSatisfaction <- factor(hr_data$EnvironmentSatisfaction)
+hr_data$JobInvolvement <- factor(hr_data$JobInvolvement)
+hr_data$JobLevel <- factor(hr_data$JobLevel)
+hr_data$JobSatisfaction <- factor(hr_data$JobSatisfaction)
+hr_data$PerformanceRating <- factor(hr_data$PerformanceRating)
+hr_data$RelationshipSatisfaction <- factor(hr_data$RelationshipSatisfaction)
+hr_data$StockOptionLevel <- factor(hr_data$StockOptionLevel)
+hr_data$WorkLifeBalance <- factor(hr_data$WorkLifeBalance)
+```
+
+### Visualization
+
+In this section, we can visualize the infuance of each variable on Attrition of the organization.
+
+##### Age plot and Fig 1 
+
+```{r}
+ggplot(data=hr_data, aes(Age)) + 
+        geom_histogram(breaks=seq(20, 50, by=2), 
+                       col="red", 
+                       aes(fill=..count..))+
+        labs(x="Age", y="Count")+
+        scale_fill_gradient("Count", low="blue", high="dark green")
+```
+
+```{r}
+travelPlot <- ggplot(hr_data,aes(BusinessTravel,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+depPlot <- ggplot(hr_data,aes(Department,fill = Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+distPlot <- ggplot(hr_data,aes(DistanceFromHome,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+ratePlot <- ggplot(hr_data,aes(DailyRate,Attrition))+geom_point(size=4,alpha = 0.05)
+grid.arrange(travelPlot,depPlot,distPlot,ratePlot,ncol=2,top = "Fig 1")
+```
+
+
+1. Age: We see that majority of employees leaving the org are around 30 Years (year 28-36). Average age is between 30 to 40.
+2. Business Travel: Among people who leave, most travel frequently or rarely.
+3. Department: Among people attrited employees from HR dept. are less.It is because of low proportion of HR in the organization(Fig 1).
+4. Distance From Home: Contrary to normal assumptions, a mojority of employees who have left the organization are near to the Office.
+5. Daily Rate: We are not able to see any distinguishable feature here(Fig 1).
+
+##### Fig 2 
+
+```{r}
+eduPlot <- ggplot(hr_data,aes(Education,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+edufieldPlot <- ggplot(hr_data,aes(EducationField,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+envPlot <- ggplot(hr_data,aes(EnvironmentSatisfaction,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+genPlot <- ggplot(hr_data,aes(Gender,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+grid.arrange(eduPlot,edufieldPlot,envPlot,genPlot,ncol=2,top = "Fig 2")
+```
+ 
+
+6. Education: From the data we know that, 1-‘Below College’, 2-‘College’, 3-‘Bachelor’, 4-‘Master’ 5 ‘Doctor’. Looking at the plot we see that very few Doctors attrite. May be because of less number. Based on the data most of the employees have Bachelors degree level education.
+7. Education Field: On lines of the trend in Departments, a minority of HR educated employees leave and it is majorly because of low proportion of the HR in the organization.
+8. Employee Count : It is an insignificant variable for us.
+9. Employee Number: It is also an insignificant variable for us.
+10. Environment Satisfaction: Ratings stand for: 1-‘Low’, 2-‘Medium’, 3-‘High’, 4-‘Very High’. We don’t see any distinguishable feature(Fig 2).
+
+##### Fig 3
+
+```{r}
+genPlot <- ggplot(hr_data,aes(Gender,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+hourlyPlot <- ggplot(hr_data,aes(HourlyRate,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+jobInvPlot <- ggplot(hr_data,aes(JobInvolvement,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+jobLevelPlot <- ggplot(hr_data,aes(JobLevel,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+jobSatPlot <- ggplot(hr_data,aes(JobSatisfaction,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+grid.arrange(genPlot, hourlyPlot,jobInvPlot,jobLevelPlot, jobSatPlot,ncol=2, top = "Fig 3")
+```
+
+11. Gender: Majority of separated employees are Male and the reason might be because around 61% of employees in the dataset are Male.
+12. HourlyRate : There seems to be no straightforward relation with the Daily Rate of the employees. 
+13. Job Involvement: Ratings stand for 1-‘Low’, 2-‘Medium’, 3-‘High’, 4-‘Very High’. Majority of employees who leave are either very highly involved or least involved in their Jobs. 
+14. JobLevel: Job Level increases the number of people quitting decreases. 
+15. Job Satisfaction: As per data 1-‘Low’, 2-‘Medium’, 3-‘High’, 4-‘Very High’. We see higher attrition levels among lower Job Satisfaction levels.
+
+##### Fig 4
+
+```{r}
+marPlot <- ggplot(hr_data,aes(MaritalStatus,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+monthlyIncPlot <- ggplot(hr_data,aes(MonthlyIncome,fill=Attrition))+geom_density() + scale_fill_brewer(palette = "Set1")
+monthlyRatePlot <- ggplot(hr_data,aes(MonthlyRate,fill=Attrition))+geom_density() + scale_fill_brewer(palette = "Set1")
+numCompPlot <- ggplot(hr_data,aes(NumCompaniesWorked,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+grid.arrange(marPlot,monthlyIncPlot,monthlyRatePlot,numCompPlot,ncol=2,top = "Fig 4")
+```
+
+16. Marital Status:Attrition is on higher side for Single and lowest for Divorced employees. Most employees are married.
+17. Monthly Income: We see higher levels of attrition among the lower segment of monthly income. If looked at in isolation, might be due to dissatisfaction of income.Higher number of employees earn less.
+18. Monthly Rate: We don’t see any inferable trend from this. Also no straightforwad relation with Monthly Income.
+19. Number of Companies Worked: We see a clear indication that many people who have worked only in One company before quit a lot.
+
+##### Fig 5
+
+```{r}
+overTimePlot <- ggplot(hr_data,aes(OverTime,fill=Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+hikePlot <- ggplot(hr_data,aes(PercentSalaryHike,Attrition))+geom_point(size=4,alpha = 0.01)
+perfPlot <- ggplot(hr_data,aes(PerformanceRating,fill = Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+RelSatPlot <- ggplot(hr_data,aes(RelationshipSatisfaction,fill = Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+grid.arrange(overTimePlot,hikePlot,perfPlot,RelSatPlot,ncol=2,top = "Fig 5")
+```
+20. Over Time: Larger Proportion of Overtime Employees are quitting.
+21. Percent Salary Hike: We see that people with less than 15% hike have more chances to leave.
+22. Performance Rating: 1-‘Low’, 2-‘Good’, 3-‘Excellent’, 4-‘Outstanding’. We see that we have employees of only 3 and 4 ratings. Lesser proportion of 4 raters quit.
+23. Relationship Satisfaction: 1-‘Low’, 2-‘Medium’, 3-‘High’, 4-‘Very High’. Higher number of people with 3 or more rating are quitiing. There are considerable amount of low and medium relationship satisfaction in this organization. 
+
+##### Fig 6
+
+```{r}
+StockPlot <- ggplot(hr_data,aes(StockOptionLevel,fill = Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+workingYearsPlot <- ggplot(hr_data,aes(TotalWorkingYears,fill = Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+TrainTimesPlot <- ggplot(hr_data,aes(TrainingTimesLastYear,fill = Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+WLBPlot <- ggplot(hr_data,aes(WorkLifeBalance,fill = Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+grid.arrange(StockPlot,workingYearsPlot,TrainTimesPlot,WLBPlot,ncol=2,top = "Fig 6")
+```
+24. Stock Option Level: Larger proportions of levels 1 & 2 tend to quit more.
+25. Total Working Years: We see larger proportions of people with 1 year of experiences quitting the organization also in bracket of 1-10 Years. Higher the number of experience you have, you tend to stay in the job. 
+26. Traning Times Last Year: This indicates the no of training interventions the employee has attended. People who have been trained 2-4 times is an area of concern.
+27. Work Life Balance:Ratings as per Metadata is 1 ‘Bad’ 2 ‘Good’ 3 ‘Better’ 4 ‘Best’. As expected larger proportion of 1 rating quit, but absolute number wise 3 is on higher side.
+
+##### Fig 7
+
+```{r}
+YearAtComPlot <- ggplot(hr_data,aes(YearsAtCompany,fill = Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+YearInCurrPlot <- ggplot(hr_data,aes(YearsInCurrentRole,fill = Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+YearsSinceProm <- ggplot(hr_data,aes(YearsSinceLastPromotion,fill = Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+YearsCurrManPlot <- ggplot(hr_data,aes(YearsWithCurrManager,fill = Attrition))+geom_bar() + scale_fill_brewer(palette = "Set1")
+grid.arrange(YearAtComPlot,YearInCurrPlot,YearsSinceProm,YearsCurrManPlot,ncol=2,top = "Fig 7")
+```
+
+28. Years at Company: Larger proportion of new comers are quitting the organization. Which sidelines the recruitment efforts of the organization.
+29. Years In Current Role: Plot shows a larger proportion with just 0 years quitting. May be a role change is a trigger for Quitting.
+30. Years Since Last Promotion: Larger proportion of people who have been promoted recently have quit the organization.
+31. Years With Current Manager: As expected a new Manager is a big cause for quitting.
+
+#### Correlation 
+
+Below plot shows correlated variables, such as with Attrition overtime is positively correlated however MonthlyIncome negatively co-related.
+
+To get all numerical data we will apply below changes on some attributes.
+
+* BUSINESS TRAVEL	(1=Non Travel, 2=Travel Frequently, 3=Tavel Rarely)
+* DEPARTMENT	(1=Human Resources, 2=Research & Development, 3=Sales)
+* EDUCATION FIELD	(1=Human Resources, 2=LIFE SCIENCES, 3=MARKETING, 4=MEDICAL SCIENCES, 5=OTHERS, 6= TEHCNICAL DEGREE)
+* GENDER	(2=FEMALE, 1=MALE)
+* JOB ROLE	(1=Healthcare Representative, 2=Human Resources, 3=Laboratory Technician, 4=MANAGER, 5= Manufacturing Director, 6= REASEARCH DIRECTOR, 7= RESEARCH SCIENTIST, 8=SALES EXECUTIEVE, 9= SALES REPRESENTATIVE)
+* MARITAL STATUS	(1=DIVORCED, 2=SINGLE, 3=MARRIED)
+* OVERTIME	(1=NO, 2=YES)
+
+
+```{r, fig.height=10}
+hr_data2 <- hr_data 
+
+
+hr_data2$BusinessTravel <- case_when(
+  hr_data2$BusinessTravel == "Non-Travel" ~ 1,
+  hr_data2$BusinessTravel == "Travel_Frequently" ~ 2,
+  hr_data2$BusinessTravel == "Travel_Rarely" ~ 3
+)
+
+hr_data2$Department <- case_when(
+  hr_data2$Department == "Human Resources" ~ 1,
+  hr_data2$Department == "Research & Development" ~ 2,
+  hr_data2$Department == "Sales" ~ 3
+)
+
+hr_data2$MaritalStatus <- case_when(
+  hr_data2$MaritalStatus == "Divorced" ~ 1,
+  hr_data2$MaritalStatus == "Single" ~ 2,
+  hr_data2$MaritalStatus == "Married" ~ 3
+)
+
+hr_data2$JobRole <- case_when(
+  hr_data2$JobRole == "Healthcare Representative" ~ 1,
+  hr_data2$JobRole == "Human Resources" ~ 2,
+  hr_data2$JobRole == "Laboratory Technician" ~ 3,
+  hr_data2$JobRole == "Manager" ~ 4,
+  hr_data2$JobRole == "Manufacturing Director" ~ 5,
+  hr_data2$JobRole == "Research Director" ~ 6,
+  hr_data2$JobRole == "Research Scientist" ~ 7,
+  hr_data2$JobRole == "Sales Executive" ~ 8,
+  hr_data2$JobRole == "Sales Representative" ~ 9
+)
+
+hr_data2$EducationField <- case_when(
+  hr_data2$EducationField == "Human Resources" ~ 1,
+  hr_data2$EducationField == "Life Sciences" ~ 2,
+  hr_data2$EducationField == "Marketing" ~ 3,
+  hr_data2$EducationField == "Medical" ~ 4,
+  hr_data2$EducationField == "Other" ~ 5,
+  hr_data2$EducationField == "Technical Degree" ~ 6
+)
+
+hr_data2$Gender <- ifelse(hr_data2$Gender == 'Female', 2, 1)
+hr_data2$OverTime <- ifelse(hr_data2$OverTime == 'Yes', 1, 0)
+hr_data2$Attrition <- ifelse(hr_data2$Attrition == 'Yes', 1, 0)
+
+hr_data2$Education <- as.integer(hr_data2$Education)
+hr_data2$EnvironmentSatisfaction <- as.integer(hr_data2$EnvironmentSatisfaction)
+hr_data2$JobInvolvement <- as.integer(hr_data2$JobInvolvement)
+hr_data2$JobLevel <- as.integer(hr_data2$JobLevel)
+hr_data2$JobSatisfaction <- as.integer(hr_data2$JobSatisfaction)
+hr_data2$PerformanceRating <- as.integer(hr_data2$PerformanceRating)
+hr_data2$RelationshipSatisfaction <- as.integer(hr_data2$RelationshipSatisfaction)
+hr_data2$StockOptionLevel <- as.integer(hr_data2$StockOptionLevel)
+hr_data2$WorkLifeBalance <- as.integer(hr_data2$WorkLifeBalance)
+
+hr_data2 <-   hr_data2 %>% dplyr::select(Attrition, everything())
+
+cor <-cor(hr_data2[1:31], use="complete.obs", method="pearson")
+corrplot(cor, type = "upper", order = "hclust",
+        col = c("green", "blue"), bg = "lightblue", tl.col = "black")
+```
+
+
+### Data Preparation
+
+Lets split the data in to 2 parts i.e train and test. Train contains 75% of data and test contains 25% of data.
+
+```{r}
+
+sample = sample.split(hr_data2$Attrition, SplitRatio = 0.75)
+
+hr_train = subset(hr_data2, sample == TRUE)
+hr_test = subset(hr_data2, sample == FALSE)
+
+```
+
+Train data has `r dim(hr_train)[1]` rows and `r dim(hr_train)[2]` coumns. Test data has `r dim(hr_test)[1]` rows and `r dim(hr_test)[2]` columns.
+
+### Model Building
+
+#### Model1 - Logistic Regression with all features
+
+We will apply logistic regression model with all variables.
+
+```{r}
+model1 <- glm(Attrition ~., family=binomial(link="logit"),data = hr_train)
+summary(model1)
+```
+
+```{r}
+
+
+predicted <- predict(model1 ,newdata = hr_test[,-1] ,type='response')
+predicted<- ifelse(predicted > 0.5,1,0)
+
+confuse_matrix <- table(true = hr_test$Attrition, predicted = predicted)
+
+TN <- confuse_matrix[4]
+FN <- confuse_matrix[3]
+TP <- confuse_matrix[1]
+FP <- confuse_matrix[2]
+
+accuracy <- (TP + TN)/(TN + FN + TP + FP)
+
+precision <- TP/(TP + FP)
+
+sensitivity <- TP/(TP + FN)
+
+specificity <- TN/(TN + FP)
+
+f1_score <- 2*TP/(2*TP + FP + FN)
+
+roc_obj <- roc(hr_test$Attrition, predicted)
+
+auc <- auc(roc_obj)
+
+df_1 <- c(accuracy, precision, sensitivity, specificity, f1_score, auc)
+names(df_1) <- c("Accuracy", " precision", "F1-sensitivity",
+                      "specificity", "f1_score", "AUC")
+
+kable(df_1, col.names = "Values") %>%kable_paper('hover', full_width = F)
+
+plot(roc(hr_test$Attrition, predicted, direction="<"),col="blue", lwd=3, main="ROC Curve", print.auc=TRUE)
+```
+
+#### Model2 - Logistic Regression with significant features
+
+There are some insignificant variable present in model1 so this model we will remove those variables.
+
+```{r}
+model2 <- glm(Attrition ~ .-BusinessTravel-Department-Education-EducationField
+              -Gender -HourlyRate -JobLevel -JobRole -MaritalStatus
+              -MonthlyIncome -MonthlyRate -PercentSalaryHike -PerformanceRating
+              -TotalWorkingYears -TrainingTimesLastYear-YearsAtCompany
+              ,family=binomial(link="logit"),data = hr_train)
+summary(model2)
+
+predicted_2 <- predict(model2, newdata = hr_test[,-1] ,type='response')
+predicted_2<- ifelse(predicted_2 > 0.5,1,0)
+
+confuse_matrix_2 <- table(true = hr_test$Attrition, predicted = predicted_2)
+
+TN <- confuse_matrix_2[4]
+FN <- confuse_matrix_2[3]
+TP <- confuse_matrix_2[1]
+FP <- confuse_matrix_2[2]
+
+accuracy <- (TP + TN)/(TN + FN + TP + FP)
+
+precision <- TP/(TP + FP)
+
+sensitivity <- TP/(TP + FN)
+
+specificity <- TN/(TN + FP)
+  
+f1_score <- 2*TP/(2*TP + FP + FN)
+
+roc_obj <- roc(hr_test$Attrition, predicted_2)
+
+auc <- auc(roc_obj)
+
+df_2 <- c(accuracy, precision, sensitivity, specificity, f1_score, auc)
+names(df_2) <- c("Accuracy", " precision", "F1-sensitivity", 
+                      "specificity", "f1_score", "AUC")
+
+kable(df_2, col.names = "Values") %>%kable_paper('hover', full_width = F)
+
+plot(roc(hr_test$Attrition, predicted_2, direction="<"),col="blue", lwd=3, main="ROC Curve", print.auc=TRUE)
+```
+
+#### Model3 - Random Forest
+
+Random forest is a supervised learning algorithm. The "forest" it builds, is an ensemble of decision trees, usually trained with the “bagging” method. The general idea of the bagging method is that a combination of learning models increases the overall result.
+
+```{r}
+
+
+#run the randomForest model
+model3 <- randomForest(Attrition ~ ., data = hr_train, ntree = 500,importance = TRUE)
+plot(model3)
+
+```
+
+```{r}
+predicted_3 <- predict(model3, newdata = hr_test[,-1])
+predicted_3<- ifelse(predicted_3 > 0.5,1,0)
+
+confuse_matrix_3 = table(hr_test$Attrition,predicted_3)
+
+TN <- confuse_matrix_3[4]
+FN <- confuse_matrix_3[3]
+TP <- confuse_matrix_3[1]
+FP <- confuse_matrix_3[2]
+
+accuracy <- (TP + TN)/(TN + FN + TP + FP)
+
+precision <- TP/(TP + FP)
+
+sensitivity <- TP/(TP + FN)
+
+specificity <- TN/(TN + FP)
+  
+f1_score <- 2*TP/(2*TP + FP + FN)
+
+roc_obj <- roc(hr_test$Attrition, predicted_3)
+
+auc <- auc(roc_obj)
+
+df_3 <- c(accuracy, precision, sensitivity, specificity, f1_score, auc)
+names(df_3) <- c("Accuracy", " precision", "F1-sensitivity", 
+                      "specificity", "f1_score", "AUC")
+
+kable(df_3, col.names = "Values") %>%kable_paper('hover', full_width = F)
+```
+
+#### Model4 - XGB
+
+Classification or regression technique that generates decision trees sequentially, where each tree focuses on correcting the previous tree model. The final output is a combination of the results from all trees.
+
+```{r}
+
+
+X <- hr_train[,-1]
+Y = hr_train$Attrition
+
+params = list(set.seed = 12,eval_metric = "auc", objective = "binary:logistic")
+
+model4 <- xgboost(data = as.matrix(X),
+                  label = Y,
+                  params = params,
+                  nrounds = 20,
+                  verbose = 1
+                  )
+xgb.plot.shap(data = as.matrix(X), model = model4, top_n = 5)
+
+predicted_4 <- predict(model4,as.matrix(hr_test[,-1]))
+predicted_4<- ifelse(predicted_4 > 0.5,1,0)
+
+confuse_matrix_4 <- table(hr_test$Attrition,predicted_4)
+
+TN <- confuse_matrix_4[4]
+FN <- confuse_matrix_4[3]
+TP <- confuse_matrix_4[1]
+FP <- confuse_matrix_4[2]
+
+accuracy <- (TP + TN)/(TN + FN + TP + FP)
+
+precision <- TP/(TP + FP)
+
+sensitivity <- TP/(TP + FN)
+
+specificity <- TN/(TN + FP)
+
+f1_score <- 2*TP/(2*TP + FP + FN)
+
+roc_obj <- roc(hr_test$Attrition, predicted_4)
+
+auc <- auc(roc_obj)
+
+df_4 <- c(accuracy, precision, sensitivity, specificity, f1_score, auc)
+names(df_4) <- c("Accuracy", " precision", "F1-sensitivity",
+                      "specificity", "f1_score", "AUC")
+
+kable(df_4, col.names = "Values") %>%kable_paper('hover', full_width = F)
+
+```
+
+Above `xgb.plot.shap` shows top 5 feature has more impact on attrition. MonthlyIncome graph clearly shows persion has high income tends less likely to leave the company than the person have low income. 
+
+#### Model 5 - Support Vector Machines
+
+A technique that’s typically used for classification but can be transformed to perform regression. It draws a division between classes that’s as wise as possible
+
+```{r}
+
+
+model5 <- svm(formula = Attrition ~., data=hr_train, type = 'C-classification',kernel="sigmoid")
+predicted_5 <- predict(model5, newdata = hr_test)
+
+confuse_matrix_5 = table(true = hr_test$Attrition, predicted = predicted_5)
+
+TN <- confuse_matrix_5[4]
+FN <- confuse_matrix_5[3]
+TP <- confuse_matrix_5[1]
+FP <- confuse_matrix_5[2]
+
+accuracy <- (TP + TN)/(TN + FN + TP + FP)
+
+precision <- TP/(TP + FP)
+
+sensitivity <- TP/(TP + FN)
+
+specificity <- TN/(TN + FP)
+
+f1_score <- 2*TP/(2*TP + FP + FN)
+
+roc_obj <- roc(hr_test$Attrition, as.integer(predicted_5))
+
+auc <- auc(roc_obj)
+
+df_5 <- c(accuracy, precision, sensitivity, specificity, f1_score, auc)
+names(df_5) <- c("Accuracy", " precision", "F1-sensitivity",
+                      "specificity", "f1_score","AUC")
+
+kable(df_5, col.names = "Values") %>%kable_paper('hover', full_width = F)
+
+plot(roc(hr_test$Attrition, as.integer(predicted_5), direction="<"),col="blue", lwd=3, main="ROC Curve", print.auc=TRUE)
+```
+
+#### Model 6 - Decesion Tree
+
+Decision Trees are a type of Supervised Machine Learning (that is you explain what the input is and what the corresponding output is in the training data) where the data is continuously split according to a certain parameter.
+
+```{r echo=TRUE, fig.width=15, out.width = "400%"}
+model6 <- rpart(formula = Attrition ~., data=hr_train)
+plot(model6)
+text(model6)
+```
+
+```{r}
+predicted_6 <- predict(model6, newdata = hr_test)
+predicted_6 <- ifelse(predicted_6 > 0.5, 1,0)
+
+confuse_matrix_6 = table(true = hr_test$Attrition, predicted = predicted_6)
+
+TN <- confuse_matrix_6[4]
+FN <- confuse_matrix_6[3]
+TP <- confuse_matrix_6[1]
+FP <- confuse_matrix_6[2]
+
+accuracy <- (TP + TN)/(TN + FN + TP + FP)
+
+precision <- TP/(TP + FP)
+
+sensitivity <- TP/(TP + FN)
+
+specificity <- TN/(TN + FP)
+
+f1_score <- 2*TP/(2*TP + FP + FN)
+
+roc_obj <- roc(hr_test$Attrition, predicted_6)
+
+auc <- auc(roc_obj)
+
+df_6 <- c(accuracy, precision, sensitivity, specificity, f1_score, auc)
+names(df_6) <- c("Accuracy", " precision", "F1-sensitivity",
+                      "specificity", "f1_score","AUC")
+
+kable(df_6, col.names = "Values") %>%kable_paper('hover', full_width = F)
+```
+
+To see matrices from all models add the data in to a dataframe.
+
+```{r}
+compare_df <- cbind(df_1,df_2,df_3,df_4,df_5,df_6)
+
+colnames(compare_df) <- c("Model 1", "Model 2", "Model 3", "Model 4", "Model 5", "Model 6")
+DT::datatable(compare_df)
+```
+
+Among all 6 models, Model 1 is doing well due to high accuracy and and high AUC.
+
+### Summary
+
+From what we have seen so far, we have been able to come to the following conclusions: 
+
+* Employees stay if they have high income or more working years at company
+* Employees who stay they gets promotion or they are satisfy with their ratings
+* Employees who have stock options they  more likely to stay
+* Employees prefer to leave if they do overtime
+
+The Logistic Regression models provides better result than any other models. 
+
+
+Reference :
+
+XGBOOST - https://www.youtube.com/watch?v=frCu6eSI8R0
+
+SVM - https://www.datacamp.com/community/tutorials/support-vector-machines-r
+
+RF - https://towardsdatascience.com/random-forest-in-r-f66adf80ec9
+
+
+
